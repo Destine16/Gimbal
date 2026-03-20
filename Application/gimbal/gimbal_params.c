@@ -1,0 +1,72 @@
+#include "gimbal_params.h"
+
+const GimbalMotorParam_s GimbalYawParam = {
+    .motor_id = GIMBAL_YAW_MOTOR_ID,
+    .angle_limit_enable = 0u,
+    .angle_feedback_sign = GIMBAL_YAW_FEED_SIGN,
+    .speed_feedback_sign = GIMBAL_YAW_GYRO_SIGN,
+    .current_feedback_sign = GIMBAL_YAW_CURRENT_SIGN,
+    .output_sign = GIMBAL_YAW_OUTPUT_SIGN,
+    .min_angle_deg = 0.0f,
+    .max_angle_deg = 0.0f,
+    .angle_pid = {
+        .Kp = 8.0f,
+        .Ki = 0.0f,
+        .Kd = 0.0f,
+        .MaxOut = 500.0f,
+        .DeadBand = 0.1f,
+        .Improve = PID_Trapezoid_Intergral | PID_Integral_Limit | PID_Derivative_On_Measurement,
+        .IntegralLimit = 100.0f,
+    },
+    .speed_pid = {
+        .Kp = 50.0f,
+        .Ki = 200.0f,
+        .Kd = 0.0f,
+        .MaxOut = 8000.0f,
+        .Improve = PID_Trapezoid_Intergral | PID_Integral_Limit | PID_Derivative_On_Measurement,
+        .IntegralLimit = 3000.0f,
+    },
+    .current_pid = {
+        .Kp = 1.0f,
+        .Ki = 0.0f,
+        .Kd = 0.0f,
+        .MaxOut = 30000.0f,
+        .Improve = PID_Integral_Limit,
+        .IntegralLimit = 10000.0f,
+    },
+};
+
+const GimbalMotorParam_s GimbalPitchParam = {
+    .motor_id = GIMBAL_PITCH_MOTOR_ID,
+    .angle_limit_enable = 1u,
+    .angle_feedback_sign = GIMBAL_PITCH_FEED_SIGN,
+    .speed_feedback_sign = GIMBAL_PITCH_GYRO_SIGN,
+    .current_feedback_sign = GIMBAL_PITCH_CURRENT_SIGN,
+    .output_sign = GIMBAL_PITCH_OUTPUT_SIGN,
+    .min_angle_deg = GIMBAL_PITCH_MIN_DEG,
+    .max_angle_deg = GIMBAL_PITCH_MAX_DEG,
+    .angle_pid = {
+        .Kp = 10.0f,
+        .Ki = 0.0f,
+        .Kd = 0.0f,
+        .MaxOut = 500.0f,
+        .Improve = PID_Trapezoid_Intergral | PID_Integral_Limit | PID_Derivative_On_Measurement,
+        .IntegralLimit = 100.0f,
+    },
+    .speed_pid = {
+        .Kp = 50.0f,
+        .Ki = 350.0f,
+        .Kd = 0.0f,
+        .MaxOut = 8000.0f,
+        .Improve = PID_Trapezoid_Intergral | PID_Integral_Limit | PID_Derivative_On_Measurement,
+        .IntegralLimit = 2500.0f,
+    },
+    .current_pid = {
+        .Kp = 1.0f,
+        .Ki = 0.0f,
+        .Kd = 0.0f,
+        .MaxOut = 30000.0f,
+        .Improve = PID_Integral_Limit,
+        .IntegralLimit = 10000.0f,
+    },
+};
