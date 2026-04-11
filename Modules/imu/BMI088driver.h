@@ -140,6 +140,11 @@ extern void BMI088_Read(IMU_Data_t *bmi088);
 extern void BMI088_AsyncEnable(void);
 
 /**
+ * @brief 运行期轮询兜底: 当 EXTI data-ready 没有进来时,由上层周期性调用推动 DMA 采样
+ */
+extern void BMI088_AsyncPoll(void);
+
+/**
  * @brief 关闭运行期BMI088异步采集
  */
 extern void BMI088_AsyncDisable(void);

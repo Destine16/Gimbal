@@ -13,9 +13,13 @@ BMI088_Context_t bmi088_ctx = {
 
 #if defined(BMI088_USE_SPI)
 
+#define BMI088_BLOCKING_SPI_TIMEOUT_MS 1000U
+#define BMI088_ACCEL_READ_OVERHEAD     2U
+#define BMI088_GYRO_READ_OVERHEAD      1U
+#define BMI088_BLOCKING_MAX_FRAME_LEN  10U
+
 static void bmi088_write_single_reg(uint8_t reg, uint8_t data);
 static void bmi088_read_single_reg(uint8_t reg, uint8_t *return_data);
-static void bmi088_read_following_bytes(uint8_t *buf, uint8_t len);
 
 void bmi088_write_accel_reg(uint8_t reg, uint8_t data)
 {
@@ -27,26 +31,40 @@ void bmi088_write_accel_reg(uint8_t reg, uint8_t data)
 
 void bmi088_read_accel_reg(uint8_t reg, uint8_t *data)
 {
+    uint8_t tx_buf[BMI088_ACCEL_READ_OVERHEAD + 1U] = {reg | 0x80U, 0x55U, 0x55U};
+    uint8_t rx_buf[BMI088_ACCEL_READ_OVERHEAD + 1U] = {0};
+
     BMI088_ACCEL_NS_L();
-    // 注意: BMI088 的 accel 和 gyro 虽然共用总线,但内部其实是两套独立器件;
-    // accel 读时序比 gyro 多一拍准备延迟,因此地址后需要额外一个 dummy byte
-    // 第 1 拍: 发送“读 reg”命令,最高位 1 表示读操作
-    BMI088_read_write_byte(reg | 0x80);
-    // 第 2 拍: 发送 dummy byte 继续给 SPI 提供时钟,这一拍回读值丢弃
-    BMI088_read_write_byte(0x55);
-    // 第 3 拍: 再发送一个 dummy byte,此时回读到的才是 reg 的真正内容
-    *data = BMI088_read_write_byte(0x55);
+    // 参考 Chassis 的稳定实现: 单次事务里把地址+dummy+数据完整打完,
+    // 避免单字节 HAL 调用带来的额外片内状态切换和时序抖动。
+    HAL_SPI_TransmitReceive(BMI088_SPI,
+                            tx_buf,
+                            rx_buf,
+                            BMI088_ACCEL_READ_OVERHEAD + 1U,
+                            BMI088_BLOCKING_SPI_TIMEOUT_MS);
     BMI088_ACCEL_NS_H();
+    *data = rx_buf[2];
 }
 
 void bmi088_read_accel_regs(uint8_t reg, uint8_t *buf, uint8_t len)
 {
+    uint8_t tx_buf[BMI088_BLOCKING_MAX_FRAME_LEN] = {0};
+    uint8_t rx_buf[BMI088_BLOCKING_MAX_FRAME_LEN] = {0};
+
+    if (len > (BMI088_BLOCKING_MAX_FRAME_LEN - BMI088_ACCEL_READ_OVERHEAD))
+        len = BMI088_BLOCKING_MAX_FRAME_LEN - BMI088_ACCEL_READ_OVERHEAD;
+
+    tx_buf[0] = reg | 0x80U;
+    memset(&tx_buf[1], 0x55, BMI088_ACCEL_READ_OVERHEAD + len - 1U);
+
     BMI088_ACCEL_NS_L();
-    // accel 连续读同样需要先补一个 dummy byte,后面再把 len 个字节依次时钟出来
-    BMI088_read_write_byte(reg | 0x80);
-    BMI088_read_write_byte(0x55);
-    bmi088_read_following_bytes(buf, len);
+    HAL_SPI_TransmitReceive(BMI088_SPI,
+                            tx_buf,
+                            rx_buf,
+                            BMI088_ACCEL_READ_OVERHEAD + len,
+                            BMI088_BLOCKING_SPI_TIMEOUT_MS);
     BMI088_ACCEL_NS_H();
+    memcpy(buf, &rx_buf[BMI088_ACCEL_READ_OVERHEAD], len);
 }
 
 void bmi088_write_gyro_reg(uint8_t reg, uint8_t data)
@@ -67,36 +85,49 @@ void bmi088_read_gyro_reg(uint8_t reg, uint8_t *data)
 
 void bmi088_read_gyro_regs(uint8_t reg, uint8_t *buf, uint8_t len)
 {
+    uint8_t tx_buf[BMI088_BLOCKING_MAX_FRAME_LEN] = {0};
+    uint8_t rx_buf[BMI088_BLOCKING_MAX_FRAME_LEN] = {0};
+
+    if (len > (BMI088_BLOCKING_MAX_FRAME_LEN - BMI088_GYRO_READ_OVERHEAD))
+        len = BMI088_BLOCKING_MAX_FRAME_LEN - BMI088_GYRO_READ_OVERHEAD;
+
+    tx_buf[0] = reg | 0x80U;
+    memset(&tx_buf[1], 0x55, len);
+
     BMI088_GYRO_NS_L();
-    BMI088_read_write_byte(reg | 0x80);
-    bmi088_read_following_bytes(buf, len);
+    HAL_SPI_TransmitReceive(BMI088_SPI,
+                            tx_buf,
+                            rx_buf,
+                            BMI088_GYRO_READ_OVERHEAD + len,
+                            BMI088_BLOCKING_SPI_TIMEOUT_MS);
     BMI088_GYRO_NS_H();
+    memcpy(buf, &rx_buf[BMI088_GYRO_READ_OVERHEAD], len);
 }
 
 static void bmi088_write_single_reg(uint8_t reg, uint8_t data)
 {
-    // SPI 写单寄存器: 先发寄存器地址,再发要写入的 1 字节数据
-    BMI088_read_write_byte(reg);
-    BMI088_read_write_byte(data);
+    uint8_t tx_buf[2] = {reg, data};
+    uint8_t rx_buf[2] = {0};
+
+    // SPI 写单寄存器保持成一次完整事务,与 Chassis 的阻塞初始化路径一致
+    HAL_SPI_TransmitReceive(BMI088_SPI,
+                            tx_buf,
+                            rx_buf,
+                            2U,
+                            BMI088_BLOCKING_SPI_TIMEOUT_MS);
 }
 
 static void bmi088_read_single_reg(uint8_t reg, uint8_t *return_data)
 {
-    // SPI 读单寄存器: reg | 0x80 把地址最高位置 1,表示读操作; 后面的 dummy 字节用于继续提供时钟
-    BMI088_read_write_byte(reg | 0x80);
-    *return_data = BMI088_read_write_byte(0x55);
-}
+    uint8_t tx_buf[2] = {reg | 0x80U, 0x55U};
+    uint8_t rx_buf[2] = {0};
 
-static void bmi088_read_following_bytes(uint8_t *buf, uint8_t len)
-{
-    // 在前面已经发出起始寄存器地址后,BMI088 会按连续读时序自动递增内部地址;
-    // 因此这里每补 1 个 dummy byte,读出的都是“下一个”寄存器内容,不会重复返回前一个字节
-    while (len != 0)
-    {
-        *buf = BMI088_read_write_byte(0x55);
-        buf++;
-        len--;
-    }
+    HAL_SPI_TransmitReceive(BMI088_SPI,
+                            tx_buf,
+                            rx_buf,
+                            2U,
+                            BMI088_BLOCKING_SPI_TIMEOUT_MS);
+    *return_data = rx_buf[1];
 }
 
 #endif
@@ -161,18 +192,14 @@ void bmi088_parse_gyro_frame(const uint8_t *rx_buf)
 {
     int16_t raw_data;
 
-    // 解析一次 gyro DMA 回读帧: 校验 chip id 后,把 X/Y/Z 三轴原始值换算成角速度
-    // 注意 rx_buf[0] 是发送读命令那一拍同时回来的无效字节,因此 chip id 在 rx_buf[1]
-    // 第 1 个回读字节是 gyro chip id,不对就丢掉这帧
-    if (rx_buf[1] != BMI088_GYRO_CHIP_ID_VALUE)
-        return;
-
-    // rx_buf[2..7] 依次是 X_L/X_H, Y_L/Y_H, Z_L/Z_H; 若开启静态零偏补偿,这里顺手减去 GyroOffset
-    raw_data = (int16_t)((rx_buf[3]) << 8) | rx_buf[2];
+    // 运行期异步 DMA 与 Chassis 对齐:
+    // 从 GYRO_X_L 开始连续读 6 字节,rx_buf[0] 是命令拍回读的无效字节,
+    // 有效数据按 X_L/X_H, Y_L/Y_H, Z_L/Z_H 排在 rx_buf[1..6]。
+    raw_data = (int16_t)((rx_buf[2]) << 8) | rx_buf[1];
     BMI088.Gyro[0] = raw_data * bmi088_ctx.gyro_sen - (bmi088_ctx.cali_offset ? BMI088.GyroOffset[0] : 0.0f);
-    raw_data = (int16_t)((rx_buf[5]) << 8) | rx_buf[4];
+    raw_data = (int16_t)((rx_buf[4]) << 8) | rx_buf[3];
     BMI088.Gyro[1] = raw_data * bmi088_ctx.gyro_sen - (bmi088_ctx.cali_offset ? BMI088.GyroOffset[1] : 0.0f);
-    raw_data = (int16_t)((rx_buf[7]) << 8) | rx_buf[6];
+    raw_data = (int16_t)((rx_buf[6]) << 8) | rx_buf[5];
     BMI088.Gyro[2] = raw_data * bmi088_ctx.gyro_sen - (bmi088_ctx.cali_offset ? BMI088.GyroOffset[2] : 0.0f);
 }
 

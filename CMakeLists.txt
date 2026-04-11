@@ -28,6 +28,12 @@ set(CMAKE_EXPORT_COMPILE_COMMANDS TRUE)
 project(${CMAKE_PROJECT_NAME})
 message("Build type: " ${CMAKE_BUILD_TYPE})
 
+option(IMU_ONLY_BRINGUP_ENABLE "Bring up only IMU-related tasks and skip robot/motor init" OFF)
+option(GIMBAL_AUTO_YAW_STEP_TEST_ENABLE "Enable temporary automatic yaw step test sequence" OFF)
+option(GIMBAL_YAW_ONLY_TEST_ENABLE "Enable temporary yaw-only gimbal test mode" OFF)
+option(GIMBAL_AUTO_PITCH_STEP_TEST_ENABLE "Enable temporary automatic pitch step test sequence" OFF)
+option(GIMBAL_PITCH_ONLY_TEST_ENABLE "Enable temporary pitch-only gimbal test mode" OFF)
+
 # Enable CMake support for ASM and C languages
 enable_language(C ASM)
 
@@ -87,6 +93,36 @@ target_include_directories(${CMAKE_PROJECT_NAME} PRIVATE
 target_compile_definitions(${CMAKE_PROJECT_NAME} PRIVATE
     # Add user defined symbols
 )
+
+if(IMU_ONLY_BRINGUP_ENABLE)
+    target_compile_definitions(${CMAKE_PROJECT_NAME} PRIVATE IMU_ONLY_BRINGUP_ENABLE=1)
+else()
+    target_compile_definitions(${CMAKE_PROJECT_NAME} PRIVATE IMU_ONLY_BRINGUP_ENABLE=0)
+endif()
+
+if(GIMBAL_AUTO_YAW_STEP_TEST_ENABLE)
+    target_compile_definitions(${CMAKE_PROJECT_NAME} PRIVATE GIMBAL_AUTO_YAW_STEP_TEST_ENABLE=1)
+else()
+    target_compile_definitions(${CMAKE_PROJECT_NAME} PRIVATE GIMBAL_AUTO_YAW_STEP_TEST_ENABLE=0)
+endif()
+
+if(GIMBAL_YAW_ONLY_TEST_ENABLE)
+    target_compile_definitions(${CMAKE_PROJECT_NAME} PRIVATE GIMBAL_YAW_ONLY_TEST_ENABLE=1)
+else()
+    target_compile_definitions(${CMAKE_PROJECT_NAME} PRIVATE GIMBAL_YAW_ONLY_TEST_ENABLE=0)
+endif()
+
+if(GIMBAL_AUTO_PITCH_STEP_TEST_ENABLE)
+    target_compile_definitions(${CMAKE_PROJECT_NAME} PRIVATE GIMBAL_AUTO_PITCH_STEP_TEST_ENABLE=1)
+else()
+    target_compile_definitions(${CMAKE_PROJECT_NAME} PRIVATE GIMBAL_AUTO_PITCH_STEP_TEST_ENABLE=0)
+endif()
+
+if(GIMBAL_PITCH_ONLY_TEST_ENABLE)
+    target_compile_definitions(${CMAKE_PROJECT_NAME} PRIVATE GIMBAL_PITCH_ONLY_TEST_ENABLE=1)
+else()
+    target_compile_definitions(${CMAKE_PROJECT_NAME} PRIVATE GIMBAL_PITCH_ONLY_TEST_ENABLE=0)
+endif()
 
 # Remove wrong libob.a library dependency when using cpp files
 list(REMOVE_ITEM CMAKE_C_IMPLICIT_LINK_LIBRARIES ob)

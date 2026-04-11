@@ -8,18 +8,24 @@
 #include "general_def.h"
 #include "robot_def.h"
 
-static INS_t INS;
+static INS_t INS = {
+    .q = {1.0f, 0.0f, 0.0f, 0.0f},
+};
 static IMU_Param_t IMU_Param;
 static DaemonInstance *ins_daemon_instance; // INS 更新在线监测
 
+// 预留派生量所需的机体系基向量; 当前工程主线暂未使用,先注释保留
+#if 0
 const float xb[3] = {1, 0, 0};
 const float yb[3] = {0, 1, 0};
 const float zb[3] = {0, 0, 1};
+#endif
 
 // 用于获取两次采样之间的时间间隔
 static uint32_t INS_DWT_Count = 0;
 static float dt = 0;
 
+static void BMI088_ToGimbalFrame(const float bmi088_vec[3], float gimbal_vec[3]);
 static void IMU_Param_Correction(IMU_Param_t *param, float gyro[3], float accel[3]);
 static float Dot3(const float a[3], const float b[3]);
 static void Cross3(const float a[3], const float b[3], float out[3]);
@@ -52,9 +58,11 @@ static void InitQuaternion(float *init_q4)
     for (uint8_t i = 0; i < 100; ++i)
     {
         BMI088_Read(&BMI088);
-        acc_init[X] += BMI088.Accel[X];
-        acc_init[Y] += BMI088.Accel[Y];
-        acc_init[Z] += BMI088.Accel[Z];
+        float accel_gimbal[3];
+        BMI088_ToGimbalFrame(BMI088.Accel, accel_gimbal);
+        acc_init[X] += accel_gimbal[X];
+        acc_init[Y] += accel_gimbal[Y];
+        acc_init[Z] += accel_gimbal[Z];
         DWT_Delay(0.001);
     }
     for (uint8_t i = 0; i < 3; ++i)
@@ -74,15 +82,29 @@ static void InitQuaternion(float *init_q4)
 
 const INS_t *INS_Init(void)
 {
-    if (!INS.init)
-        INS.init = 1;
-    else
+    BMI088_Error_t init_error;
+    float init_quaternion[4] = {0};
+    uint8_t enable_startup_calibration = 1u;
+
+    if (INS.init)
         return &INS;
 
-    // 若 BMI088 初始化失败则一直阻塞重试,直到通信、配置和标定全部成功
-    while (BMI088Init(&hspi1, 1) != BMI088_NO_ERROR)
+    INS.init_attempt_count++;
+    BMI088_AsyncDisable();
+
+#if IMU_ONLY_BRINGUP_ENABLE
+    // IMU-only bring-up 参考 Chassis 的快速初始化思路:
+    // 跳过启动期长时间阻塞的静态标定,优先尽快跑通 BMI088 + EKF + RTT 数据链路
+    enable_startup_calibration = 0u;
+#endif
+
+    init_error = BMI088Init(&hspi1, enable_startup_calibration);
+    INS.init_error = init_error;
+    if (init_error != BMI088_NO_ERROR)
     {
+        return NULL;
     }
+
     // IMU 安装/比例修正参数: 当前保持单位比例和零安装角,等效于不做额外修正
     IMU_Param.scale[X] = 1;
     IMU_Param.scale[Y] = 1;
@@ -92,10 +114,13 @@ const INS_t *INS_Init(void)
     IMU_Param.Roll = 0;
     IMU_Param.flag = 1;
 
-    float init_quaternion[4] = {0};
     InitQuaternion(init_quaternion);
-    IMU_QuaternionEKF_Init(init_quaternion, 10, 0.001, 1000000, 1, 0);
+    // 基于 static.csv 的静态噪声估计,这里先采用更稳的工程初值:
+    // Q1/Q2/R 贴近静态数据量级,同时给出保守的 lambda/lpf 便于后续继续动态整定。
+    IMU_QuaternionEKF_Init(init_quaternion, 1e-7f, 1e-7f, 1e-5f, 0.9996f, 0.0085f);
+#if !IMU_ONLY_BRINGUP_ENABLE
     BMI088_AsyncEnable();
+#endif
     if (ins_daemon_instance == NULL)
     {
         // 这里同样是“复合字面量 + 指定初始化”:
@@ -113,6 +138,8 @@ const INS_t *INS_Init(void)
     // noise of accel is relatively big and of high freq,thus lpf is used
     INS.AccelLPF = 0.0085;
     DWT_GetDeltaT(&INS_DWT_Count);
+    INS.init = 1;
+    INS.init_error = BMI088_NO_ERROR;
     return &INS;
 }
 
@@ -130,40 +157,56 @@ uint8_t INS_IsOnline(void)
 /* 注意以1kHz的频率运行此任务 */
 void INS_Task(void)
 {
+#if !IMU_ONLY_BRINGUP_ENABLE
     static uint32_t last_bmi088_seq = 0; // 上一次已消费的 BMI088 样本序号,用于避免重复处理旧样本
-    const float gravity[3] = {0, 0, 9.81f}; // 导航系 n 中定义的重力向量
-    IMU_Data_t sample;                   // 本轮从 BMI088 异步缓冲中取出的最新样本
     uint32_t sample_seq = 0;             // 与 sample 对应的样本序号
+#endif
+    IMU_Data_t sample;
 
-    // 条件一: BMI088_FetchData 返回 0,表示异步链路当前还没有可读的有效样本
-    // 条件二: sample_seq == last_bmi088_seq,表示虽然取到了样本,但仍是上一次已经消费过的旧样本
-    // 只要满足任一条件,本轮就不继续更新 INS
+    if (!INS.init)
+        return;
+
+#if IMU_ONLY_BRINGUP_ENABLE
+    // IMU-only bring-up 目标是尽快稳定采到 BMI088 数据并输出 RTT 日志。
+    // 这里直接走阻塞式 BMI088_Read(),绕开 EXTI/DMA 依赖,避免因为中断线或 DMA 状态机问题导致“有初始化、没样本”。
+    BMI088_Read(&BMI088);
+    sample = BMI088;
+    dt = DWT_GetDeltaT(&INS_DWT_Count);
+#else
+    // EXTI data-ready 正常时这一步基本没有额外成本;
+    // 若自制板的 BMI088 中断线没接好,这里的轮询兜底仍会推动 DMA 采样继续运行。
+    BMI088_AsyncPoll();
+
+    // 这里按 || 从左到右求值:
+    // 1. 先执行 BMI088_FetchData(&sample, &sample_seq),函数内部会顺手把当前样本序号写入 sample_seq
+    // 2. 若左边已经为真(还没有有效样本),则右边短路不再判断
+    // 3. 只有左边为假时,才继续比较 sample_seq 是否仍等于上一次已消费的序号
     if (!BMI088_FetchData(&sample, &sample_seq) || sample_seq == last_bmi088_seq)
         return;
     // 只在真正消费到一帧新样本后再更新时间步长,这样 dt 才表示“上一次有效样本到这一次有效样本”的实际间隔
     dt = DWT_GetDeltaT(&INS_DWT_Count);
     // 记录本轮已消费到的最新样本序号,避免下一次重复处理同一帧数据
     last_bmi088_seq = sample_seq;
+#endif
 
-    INS.Accel[X] = sample.Accel[X];
-    INS.Accel[Y] = sample.Accel[Y];
-    INS.Accel[Z] = sample.Accel[Z];
-    INS.Gyro[X] = sample.Gyro[X];
-    INS.Gyro[Y] = sample.Gyro[Y];
-    INS.Gyro[Z] = sample.Gyro[Z];
+    BMI088_ToGimbalFrame(sample.Accel, INS.Accel);
+    BMI088_ToGimbalFrame(sample.Gyro, INS.Gyro);
 
     // 用于修正安装误差; 当前参数为单位变换
     IMU_Param_Correction(&IMU_Param, INS.Gyro, INS.Accel);
 
     // 预留扩展: 当前工程未启用这两个角度量,这里只保留计算入口注释
-    // INS.atanxz = -atan2f(INS.Accel[X], INS.Accel[Z]) * 180 / PI;
-    // INS.atanyz = atan2f(INS.Accel[Y], INS.Accel[Z]) * 180 / PI;
+    // INS.atanxz = -atan2f(INS.Accel[X], INS.Accel[Z]);
+    // INS.atanyz = atan2f(INS.Accel[Y], INS.Accel[Z]);
 
     // 核心函数,EKF更新四元数
     IMU_QuaternionEKF_Update(INS.Gyro[X], INS.Gyro[Y], INS.Gyro[Z], INS.Accel[X], INS.Accel[Y], INS.Accel[Z], dt);
 
     memcpy(INS.q, QEKF_INS.q, sizeof(QEKF_INS.q));
 
+    // 预留派生量: 当前工程上层未消费机体系基向量和去重力后的运动加速度,先注释保留
+#if 0
+    const float gravity[3] = {0, 0, 9.81f}; // 导航系 n 中定义的重力向量
     // 机体系基向量转换到导航坐标系，本例选取惯性系为导航系
     BodyFrameToEarthFrame(xb, INS.xn, INS.q);
     BodyFrameToEarthFrame(yb, INS.yn, INS.q);
@@ -177,6 +220,7 @@ void INS_Task(void)
         INS.MotionAccel_b[i] = (INS.Accel[i] - gravity_b[i]) * dt / (INS.AccelLPF + dt) + INS.MotionAccel_b[i] * INS.AccelLPF / (INS.AccelLPF + dt);
     }
     BodyFrameToEarthFrame(INS.MotionAccel_b, INS.MotionAccel_n, INS.q); // 转换回导航系n
+#endif
 
     INS.Yaw = QEKF_INS.Yaw;
     INS.Pitch = QEKF_INS.Pitch;
@@ -187,9 +231,19 @@ void INS_Task(void)
     DaemonReload(ins_daemon_instance);
 }
 
+static void BMI088_ToGimbalFrame(const float bmi088_vec[3], float gimbal_vec[3])
+{
+    // ACE 主控安装: 相机前方 = BMI088 -X, 上方 = BMI088 +Z.
+    // 常见机器人右手坐标: +X 为前方, +Y 为左方, +Z 为上方.
+    // 在这个坐标中 +Yaw 为从上往下看逆时针; 业务 +Pitch 的抬头约定由 robot_def.h 的符号层处理.
+    gimbal_vec[X] = -bmi088_vec[X];
+    gimbal_vec[Y] = -bmi088_vec[Y];
+    gimbal_vec[Z] = bmi088_vec[Z];
+}
+
 /**
  * @brief          Transform 3dvector from BodyFrame to EarthFrame
- * @note           当前工程在 INS_Task() 中实际使用,用于把机体系基向量和运动加速度转换到导航系
+ * @note           预留坐标变换工具函数; 当前工程主线暂未使用,先保留
  * @param[1]       vector in BodyFrame
  * @param[2]       vector in EarthFrame
  * @param[3]       quaternion
@@ -211,7 +265,7 @@ void BodyFrameToEarthFrame(const float *vecBF, float *vecEF, float *q)
 
 /**
  * @brief          Transform 3dvector from EarthFrame to BodyFrame
- * @note           当前工程在 INS_Task() 中实际使用,用于把导航系重力向量转换回机体系
+ * @note           预留坐标变换工具函数; 当前工程主线暂未使用,先保留
  * @param[1]       vector in EarthFrame
  * @param[2]       vector in BodyFrame
  * @param[3]       quaternion
@@ -250,12 +304,12 @@ static void IMU_Param_Correction(IMU_Param_t *param, float gyro[3], float accel[
         fabsf(param->Pitch - lastPitchOffset) > 0.001f ||
         fabsf(param->Roll - lastRollOffset) > 0.001f || param->flag)
     {
-        cosYaw = arm_cos_f32(param->Yaw / 57.295779513f);
-        cosPitch = arm_cos_f32(param->Pitch / 57.295779513f);
-        cosRoll = arm_cos_f32(param->Roll / 57.295779513f);
-        sinYaw = arm_sin_f32(param->Yaw / 57.295779513f);
-        sinPitch = arm_sin_f32(param->Pitch / 57.295779513f);
-        sinRoll = arm_sin_f32(param->Roll / 57.295779513f);
+        cosYaw = arm_cos_f32(param->Yaw);
+        cosPitch = arm_cos_f32(param->Pitch);
+        cosRoll = arm_cos_f32(param->Roll);
+        sinYaw = arm_sin_f32(param->Yaw);
+        sinPitch = arm_sin_f32(param->Pitch);
+        sinRoll = arm_sin_f32(param->Roll);
 
         // 1.yaw(alpha) 2.pitch(beta) 3.roll(gamma)
         c_11 = cosYaw * cosRoll + sinYaw * sinPitch * sinRoll;

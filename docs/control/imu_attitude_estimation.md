@@ -34,6 +34,11 @@ BMI088_Read()
 -> 输出 q / yaw / pitch / roll / yaw_total
 ```
 
+其中：
+
+- `yaw / pitch / roll / yaw_total` 单位为 `rad`
+- `Gyro[3]` 单位为 `rad/s`
+
 主要代码位置：
 
 - BMI088 驱动：
@@ -77,7 +82,7 @@ BMI088_Read()
 - yaw 角度反馈：`YawTotalAngle`
 - pitch 角度反馈：`Pitch`
 - yaw 角速度反馈：`Gyro[2]`
-- pitch 角速度反馈：`Gyro[0]`
+- pitch 角速度反馈：`Gyro[1]`
 
 对应代码位置：
 

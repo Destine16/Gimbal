@@ -66,6 +66,13 @@ GM6020_Instance *GM6020_Init(const GM6020_Init_Config_s *config)
     motor->speed_feedback_ptr = config->speed_feedback_ptr;
     motor->current_feedback_sign = (config->current_feedback_sign == 0.0f) ? 1.0f : config->current_feedback_sign;
     motor->output_sign = (config->output_sign == 0.0f) ? 1.0f : config->output_sign;
+    motor->max_output_raw = config->max_output_raw;
+    motor->output_ff_sin_raw = config->output_ff_sin_raw;
+    motor->output_ff_offset_raw = config->output_ff_offset_raw;
+    if ((motor->max_output_raw <= 0.0f) || (motor->max_output_raw > GM6020_VOLTAGE_CMD_MAX_RAW))
+    {
+        motor->max_output_raw = GM6020_VOLTAGE_CMD_MAX_RAW;
+    }
     // 初始化后默认不输出,由上层显式 Enable() 再进入控制
     motor->enabled = 0u;
 
@@ -88,13 +95,13 @@ GM6020_Instance *GM6020_Init(const GM6020_Init_Config_s *config)
     return motor;
 }
 
-void GM6020_SetAngleRef(GM6020_Instance *motor, float angle_deg)
+void GM6020_SetAngleRef(GM6020_Instance *motor, float angle_rad)
 {
     if (motor == NULL)
     {
         return;
     }
-    motor->angle_ref_deg = angle_deg;
+    motor->angle_ref_rad = angle_rad;
 }
 
 void GM6020_Enable(GM6020_Instance *motor)

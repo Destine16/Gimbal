@@ -12,8 +12,11 @@ typedef struct
     float speed_feedback_sign;
     float current_feedback_sign;
     float output_sign;
-    float min_angle_deg;
-    float max_angle_deg;
+    float max_output_raw;
+    float min_angle_rad;
+    float max_angle_rad;
+    float output_ff_sin_raw;
+    float output_ff_offset_raw;
     PID_Init_Config_s angle_pid;
     PID_Init_Config_s speed_pid;
     PID_Init_Config_s current_pid;

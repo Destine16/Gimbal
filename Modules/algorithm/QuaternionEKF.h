@@ -45,11 +45,11 @@ typedef struct
     float accl_norm;
     float AdaptiveGainScale;
 
-    float Roll;
-    float Pitch;
-    float Yaw;
+    float Roll;          // unit: rad
+    float Pitch;         // unit: rad
+    float Yaw;           // unit: rad
 
-    float YawTotalAngle;
+    float YawTotalAngle; // unit: rad
 
     float Q1; // 四元数更新过程噪声
     float Q2; // 陀螺仪零偏过程噪声

@@ -47,10 +47,11 @@ Modules/
 - 视觉侧下发的是增量角，而不是绝对角
   - `yaw_target = current_yaw + yaw_delta`
   - `pitch_target = current_pitch + pitch_delta`
+- 内部控制统一使用 `rad / rad/s`
 - yaw 角度反馈来自 IMU 的 `YawTotalAngle`
 - pitch 角度反馈来自 IMU 的 `Pitch`
 - yaw 角速度反馈来自 IMU 的 `Gyro[2]`
-- pitch 角速度反馈来自 IMU 的 `Gyro[0]`
+- pitch 角速度反馈来自 IMU 的 `Gyro[1]`
 - pitch 目标角在进入电机控制前会经过软件限位
 
 ## 编译方式
@@ -95,5 +96,6 @@ build/Debug/Gimbal.elf
 
 - [视觉 USB CDC 通信协议](docs/protocol/vision_usb_cdc_protocol.md)
 - [IMU 姿态解算说明](docs/control/imu_attitude_estimation.md)
+- [云台坐标系与方向约定](docs/control/gimbal_coordinate_and_direction.md)
 - [Quaternion EKF 数学说明](docs/control/quaternion_ekf_math.md)
 - [量测门控与 bias 可观测性](docs/control/measurement_gating_and_bias.md)

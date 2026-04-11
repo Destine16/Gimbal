@@ -84,13 +84,19 @@ static void GM6020_SendBus(CAN_HandleTypeDef *hcan)
 void GM6020_CAN_Init(CAN_HandleTypeDef *hcan)
 {
     CAN_FilterTypeDef filter = {0};
+    const uint32_t can2_start_filter_bank = 14u;
 
     if ((hcan == NULL) || GM6020_CANReady(hcan))
     {
         return;
     }
 
-    filter.FilterBank = 0;
+    filter.SlaveStartFilterBank = can2_start_filter_bank;
+#if defined(CAN2)
+    filter.FilterBank = (hcan->Instance == CAN2) ? can2_start_filter_bank : 0u;
+#else
+    filter.FilterBank = 0u;
+#endif
     filter.FilterMode = CAN_FILTERMODE_IDMASK;
     filter.FilterScale = CAN_FILTERSCALE_32BIT;
     filter.FilterIdHigh = 0x0000;
@@ -99,7 +105,6 @@ void GM6020_CAN_Init(CAN_HandleTypeDef *hcan)
     filter.FilterMaskIdLow = 0x0000;
     filter.FilterFIFOAssignment = CAN_FILTER_FIFO0;
     filter.FilterActivation = ENABLE;
-    filter.SlaveStartFilterBank = 14;
 
     HAL_CAN_ConfigFilter(hcan, &filter);
     HAL_CAN_Start(hcan);
@@ -154,10 +159,10 @@ void GM6020_ParseFeedback(GM6020_Instance *motor, const uint8_t rx_data[8], uint
     motor->measure.last_ecd = motor->measure.ecd;
     motor->measure.ecd = (uint16_t)((rx_data[0] << 8) | rx_data[1]);
     speed_rpm = (int16_t)((rx_data[2] << 8) | rx_data[3]);
-    motor->measure.speed_deg_s = (float)speed_rpm * RPM_2_ANGLE_PER_SEC;
+    motor->measure.speed_rad_s = (float)speed_rpm * RPM_2_RAD_PER_SEC;
     motor->measure.real_current = (int16_t)((rx_data[4] << 8) | rx_data[5]);
     motor->measure.temperature = rx_data[6];
-    motor->measure.angle_single_round_deg = (float)motor->measure.ecd * GM6020_ECD_TO_DEG;
+    motor->measure.angle_single_round_rad = (float)motor->measure.ecd * GM6020_ECD_TO_RAD;
     motor->last_rx_tick = now_tick;
     // 收到一帧电机反馈即刷新在线状态
     DaemonReload(motor->daemon);
@@ -171,7 +176,7 @@ void GM6020_ParseFeedback(GM6020_Instance *motor, const uint8_t rx_data[8], uint
         motor->measure.total_round++;
     }
 
-    motor->measure.total_angle_deg = 360.0f * (float)motor->measure.total_round + motor->measure.angle_single_round_deg;
+    motor->measure.total_angle_rad = PI2 * (float)motor->measure.total_round + motor->measure.angle_single_round_rad;
 }
 
 void GM6020_RxFifo0Callback(CAN_HandleTypeDef *hcan)

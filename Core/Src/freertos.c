@@ -25,6 +25,7 @@
 
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
+#include "bsp_dwt.h"
 #include "robot.h"
 #include "robot_def.h"
 
@@ -51,7 +52,6 @@
 /* USER CODE END Variables */
 /* Definitions for robotTask */
 osThreadId_t robotTaskHandle;
-// 应用主任务: 5ms 周期运行,负责 robot_cmd / gimbal 两个应用模块调度
 const osThreadAttr_t robotTask_attributes = {
   .name = "robotTask",
   .stack_size = 512 * 4,
@@ -59,7 +59,6 @@ const osThreadAttr_t robotTask_attributes = {
 };
 /* Definitions for insTask */
 osThreadId_t insTaskHandle;
-// 姿态任务: 1ms 周期运行,负责 BMI088 采样结果处理和姿态解算
 const osThreadAttr_t insTask_attributes = {
   .name = "insTask",
   .stack_size = 1024 * 4,
@@ -67,7 +66,6 @@ const osThreadAttr_t insTask_attributes = {
 };
 /* Definitions for motorTask */
 osThreadId_t motorTaskHandle;
-// 电机控制任务: 1ms 周期运行,负责 GM6020 闭环控制和 CAN 输出
 const osThreadAttr_t motorTask_attributes = {
   .name = "motorTask",
   .stack_size = 256 * 4,
@@ -75,7 +73,6 @@ const osThreadAttr_t motorTask_attributes = {
 };
 /* Definitions for daemonTask */
 osThreadId_t daemonTaskHandle;
-// 守护任务: 低频运行,统一维护各模块在线计数和离线状态
 const osThreadAttr_t daemonTask_attributes = {
   .name = "daemonTask",
   .stack_size = 256 * 4,
@@ -103,7 +100,11 @@ void MX_FREERTOS_Init(void); /* (MISRA C 2004 rule 8.1) */
 void MX_FREERTOS_Init(void) {
   /* USER CODE BEGIN Init */
   // 调度器启动前完成一次性业务初始化; 任务本体只负责周期运行
+#if IMU_ONLY_BRINGUP_ENABLE
+  DWT_Init(HAL_RCC_GetHCLKFreq() / 1000000U);
+#else
   RobotInit();
+#endif
 
   /* USER CODE END Init */
 
@@ -124,14 +125,18 @@ void MX_FREERTOS_Init(void) {
   /* USER CODE END RTOS_QUEUES */
 
   /* Create the thread(s) */
+#if !IMU_ONLY_BRINGUP_ENABLE
   /* creation of robotTask */
   robotTaskHandle = osThreadNew(StartRobotTask, NULL, &robotTask_attributes);
+#endif
 
   /* creation of insTask */
   insTaskHandle = osThreadNew(StartINSTask, NULL, &insTask_attributes);
 
+#if !IMU_ONLY_BRINGUP_ENABLE
   /* creation of motorTask */
   motorTaskHandle = osThreadNew(StartMotorTask, NULL, &motorTask_attributes);
+#endif
 
   /* creation of daemonTask */
   daemonTaskHandle = osThreadNew(StartDaemonTask, NULL, &daemonTask_attributes);

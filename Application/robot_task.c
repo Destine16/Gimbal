@@ -11,13 +11,17 @@ void StartINSTask(void *argument)
 {
     (void)argument;
 
-    // insTask 启动时先执行一次 INS_Init(),后续只保留 1ms 周期更新
-    INS_Init();
-
     for (;;)
     {
         // 姿态任务周期: 1ms
         // 职责: 读取最新 IMU 样本并更新姿态解算结果
+        if (INS_Init() == NULL)
+        {
+            // 初始化失败时保持 IMU 离线,不要卡死任务; 降频重试避免长时间占用 CPU
+            osDelay(100);
+            continue;
+        }
+
         INS_Task();
         osDelay(1);
     }

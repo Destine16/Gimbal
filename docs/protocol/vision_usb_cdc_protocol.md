@@ -62,10 +62,10 @@ SOF1 | SOF2 | TYPE | LEN | PAYLOAD | CRC16
 
 ```c
 typedef struct __attribute__((packed)) {
-    int16_t yaw_0p01deg;
-    int16_t pitch_0p01deg;
-    int16_t yaw_speed_0p01rad;
-    int16_t pitch_speed_0p01rad;
+    int16_t yaw_0p01rad;
+    int16_t pitch_0p01rad;
+    int16_t yaw_speed_0p01radps;
+    int16_t pitch_speed_0p01radps;
     uint16_t distance_mm;
     uint8_t track_state;
     uint8_t fire_cmd;
@@ -76,16 +76,16 @@ typedef struct __attribute__((packed)) {
 
 ### 字段含义
 
-- `yaw_0p01deg`
+- `yaw_0p01rad`
   - 当前云台还需要再转多少 yaw
-  - 单位：`0.01 deg`
-- `pitch_0p01deg`
+  - 单位：`0.01 rad`
+- `pitch_0p01rad`
   - 当前云台还需要再转多少 pitch
-  - 单位：`0.01 deg`
-- `yaw_speed_0p01rad`
+  - 单位：`0.01 rad`
+- `yaw_speed_0p01radps`
   - 可选 yaw 角速度参考
   - 单位：`0.01 rad/s`
-- `pitch_speed_0p01rad`
+- `pitch_speed_0p01radps`
   - 可选 pitch 角速度参考
   - 单位：`0.01 rad/s`
 - `distance_mm`
@@ -99,7 +99,7 @@ typedef struct __attribute__((packed)) {
 
 ### 电控侧解释方式
 
-当前固件把 `yaw_0p01deg` 和 `pitch_0p01deg` 当作增量角：
+当前固件把 `yaw_0p01rad` 和 `pitch_0p01rad` 当作增量角：
 
 ```text
 yaw_target   = current_yaw   + yaw_delta

@@ -30,7 +30,10 @@ typedef struct
     volatile uint8_t have_accel;        // 自上次发布样本后,accel 是否已经更新过
     volatile uint8_t pending_gyro;      // SPI 忙时挂起的 gyro 触发
     volatile uint8_t pending_accel;     // SPI 忙时挂起的 accel 触发
+    volatile uint8_t prefer_accel;      // 轮询兜底时,两侧都待采时优先谁
     volatile uint32_t seq;              // 完整新样本序号; 只有自上次发布后 accel 和 gyro 都有新数据时才递增
+    volatile uint32_t last_update_tick; // 最近一次成功完成 BMI088 DMA 读的系统节拍
+    volatile uint32_t last_transfer_tick;// 最近一次发起 BMI088 DMA 读的系统节拍
     volatile BMI088_AsyncState_e state; // 当前异步状态机状态
     uint8_t tx_buf[9];                  // DMA 发送缓冲区
     uint8_t rx_buf[9];                  // DMA 接收缓冲区
@@ -69,5 +72,6 @@ uint8_t bmi088_start_accel_dma_transfer(void);
 uint8_t bmi088_start_temp_dma_transfer(void);
 void bmi088_service_pending_transfer(void);
 void bmi088_async_reset_state(void);
+void BMI088_AsyncPoll(void);
 
 #endif

@@ -1,20 +1,14 @@
-/**
- ******************************************************************************
- * @file    QuaternionEKF.c
- * @author  Wang Hongxi
- * @version V1.2.0
- * @date    2022/3/8
- * @brief   attitude update with gyro bias estimate and chi-square test
- ******************************************************************************
- * @attention
- * 1st order LPF transfer function:
- *     1
- *  ———————
- *  as + 1
- * 
- ******************************************************************************
- */
 #include "QuaternionEKF.h"
+#include "general_def.h"
+
+#define IMU_EKF_CHI_SQUARE_THRESHOLD 12.0f
+// EKF 启动期的不确定度配置。
+// 姿态按约 0.5 deg 的初始不确定度处理,xy 轴 gyro bias 按约 0.002 rad/s 处理。
+#define IMU_EKF_INIT_ATTITUDE_STD_RAD  (0.008726646f) // 0.5 deg
+#define IMU_EKF_INIT_BIAS_STD_RAD_S    (0.0020f)
+#define IMU_EKF_INIT_Q_SCALAR_VAR      (1.0e-6f)
+#define IMU_EKF_INIT_Q_VECTOR_VAR      (0.25f * IMU_EKF_INIT_ATTITUDE_STD_RAD * IMU_EKF_INIT_ATTITUDE_STD_RAD)
+#define IMU_EKF_INIT_BIAS_VAR          (IMU_EKF_INIT_BIAS_STD_RAD_S * IMU_EKF_INIT_BIAS_STD_RAD_S)
 
 QEKF_INS_t QEKF_INS;
 
@@ -24,12 +18,13 @@ const float IMU_QuaternionEKF_F[36] = {1, 0, 0, 0, 0, 0,
                                        0, 0, 0, 1, 0, 0,
                                        0, 0, 0, 0, 1, 0,
                                        0, 0, 0, 0, 0, 1};
-float IMU_QuaternionEKF_P[36] = {100000, 0.1, 0.1, 0.1, 0.1, 0.1,
-                                 0.1, 100000, 0.1, 0.1, 0.1, 0.1,
-                                 0.1, 0.1, 100000, 0.1, 0.1, 0.1,
-                                 0.1, 0.1, 0.1, 100000, 0.1, 0.1,
-                                 0.1, 0.1, 0.1, 0.1, 100, 0.1,
-                                 0.1, 0.1, 0.1, 0.1, 0.1, 100};
+// 初始状态协方差 P0,对应状态 [q0, q1, q2, q3, bias_x, bias_y].
+float IMU_QuaternionEKF_P[36] = {IMU_EKF_INIT_Q_SCALAR_VAR, 0, 0, 0, 0, 0,
+                                 0, IMU_EKF_INIT_Q_VECTOR_VAR, 0, 0, 0, 0,
+                                 0, 0, IMU_EKF_INIT_Q_VECTOR_VAR, 0, 0, 0,
+                                 0, 0, 0, IMU_EKF_INIT_Q_VECTOR_VAR, 0, 0,
+                                 0, 0, 0, 0, IMU_EKF_INIT_BIAS_VAR, 0,
+                                 0, 0, 0, 0, 0, IMU_EKF_INIT_BIAS_VAR};
 float IMU_QuaternionEKF_K[18];
 float IMU_QuaternionEKF_H[18];
 
@@ -40,12 +35,12 @@ static void IMU_QuaternionEKF_SetH(KalmanFilter_t *kf);
 static void IMU_QuaternionEKF_xhatUpdate(KalmanFilter_t *kf);
 
 /**
- * @brief Quaternion EKF initialization and some reference value
- * @param[in] process_noise1 quaternion process noise    10
- * @param[in] process_noise2 gyro bias process noise     0.001
- * @param[in] measure_noise  accel measure noise         1000000
- * @param[in] lambda         fading coefficient          0.9996
- * @param[in] lpf            lowpass filter coefficient  0
+ * @brief Quaternion EKF initialization
+ * @param[in] process_noise1 quaternion process noise spectral density scale
+ * @param[in] process_noise2 gyro bias process noise spectral density scale
+ * @param[in] measure_noise  normalized accel measurement noise
+ * @param[in] lambda         fading coefficient for bias covariance
+ * @param[in] lpf            accel LPF RC constant in seconds
  */
 void IMU_QuaternionEKF_Init(float* init_quaternion,float process_noise1, float process_noise2, float measure_noise, float lambda, float lpf)
 {
@@ -53,7 +48,8 @@ void IMU_QuaternionEKF_Init(float* init_quaternion,float process_noise1, float p
     QEKF_INS.Q1 = process_noise1;
     QEKF_INS.Q2 = process_noise2;
     QEKF_INS.R = measure_noise;
-    QEKF_INS.ChiSquareTestThreshold = 1e-8;
+    // 量测一致性检验门限,用于抑制异常加速度对姿态修正的影响。
+    QEKF_INS.ChiSquareTestThreshold = IMU_EKF_CHI_SQUARE_THRESHOLD;
     QEKF_INS.ConvergeFlag = 0;
     QEKF_INS.ErrorCount = 0;
     QEKF_INS.UpdateCount = 0;
@@ -198,20 +194,20 @@ void IMU_QuaternionEKF_Update(float gx, float gy, float gz, float ax, float ay, 
     QEKF_INS.GyroBias[2] = 0; // 大部分时候z轴通天,无法观测yaw的漂移
 
     // 利用四元数反解欧拉角
-    QEKF_INS.Yaw = atan2f(2.0f * (QEKF_INS.q[0] * QEKF_INS.q[3] + QEKF_INS.q[1] * QEKF_INS.q[2]), 2.0f * (QEKF_INS.q[0] * QEKF_INS.q[0] + QEKF_INS.q[1] * QEKF_INS.q[1]) - 1.0f) * 57.295779513f;
-    QEKF_INS.Pitch = atan2f(2.0f * (QEKF_INS.q[0] * QEKF_INS.q[1] + QEKF_INS.q[2] * QEKF_INS.q[3]), 2.0f * (QEKF_INS.q[0] * QEKF_INS.q[0] + QEKF_INS.q[3] * QEKF_INS.q[3]) - 1.0f) * 57.295779513f;
-    QEKF_INS.Roll = asinf(-2.0f * (QEKF_INS.q[1] * QEKF_INS.q[3] - QEKF_INS.q[0] * QEKF_INS.q[2])) * 57.295779513f;
+    QEKF_INS.Yaw = atan2f(2.0f * (QEKF_INS.q[0] * QEKF_INS.q[3] + QEKF_INS.q[1] * QEKF_INS.q[2]), 2.0f * (QEKF_INS.q[0] * QEKF_INS.q[0] + QEKF_INS.q[1] * QEKF_INS.q[1]) - 1.0f);
+    QEKF_INS.Roll = atan2f(2.0f * (QEKF_INS.q[0] * QEKF_INS.q[1] + QEKF_INS.q[2] * QEKF_INS.q[3]), 2.0f * (QEKF_INS.q[0] * QEKF_INS.q[0] + QEKF_INS.q[3] * QEKF_INS.q[3]) - 1.0f);
+    QEKF_INS.Pitch = asinf(-2.0f * (QEKF_INS.q[1] * QEKF_INS.q[3] - QEKF_INS.q[0] * QEKF_INS.q[2]));
 
     // get Yaw total, yaw数据可能会超过360,处理一下方便其他功能使用(如小陀螺)
-    if (QEKF_INS.Yaw - QEKF_INS.YawAngleLast > 180.0f)
+    if (QEKF_INS.Yaw - QEKF_INS.YawAngleLast > PI)
     {
         QEKF_INS.YawRoundCount--;
     }
-    else if (QEKF_INS.Yaw - QEKF_INS.YawAngleLast < -180.0f)
+    else if (QEKF_INS.Yaw - QEKF_INS.YawAngleLast < -PI)
     {
         QEKF_INS.YawRoundCount++;
     }
-    QEKF_INS.YawTotalAngle = 360.0f * QEKF_INS.YawRoundCount + QEKF_INS.Yaw;
+    QEKF_INS.YawTotalAngle = PI2 * QEKF_INS.YawRoundCount + QEKF_INS.Yaw;
     QEKF_INS.YawAngleLast = QEKF_INS.Yaw;
     QEKF_INS.UpdateCount++; // 初始化低通滤波用,计数测试用
 }

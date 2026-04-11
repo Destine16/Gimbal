@@ -7,6 +7,11 @@ typedef struct
     BMI088_Error_t error;
 } BMI088_InitItem_t;
 
+volatile uint32_t bmi088_debug_accel_chip_id_before_reset = 0u;
+volatile uint32_t bmi088_debug_accel_chip_id_after_reset = 0u;
+volatile uint32_t bmi088_debug_gyro_chip_id_before_reset = 0u;
+volatile uint32_t bmi088_debug_gyro_chip_id_after_reset = 0u;
+
 // accel 初始化表: {寄存器地址, 目标配置值, 该项写入失败时对应的错误位}
 static const BMI088_InitItem_t bmi088_accel_init_table[BMI088_WRITE_ACCEL_REG_NUM] =
     {
@@ -49,12 +54,19 @@ BMI088_Error_t BMI088Init(SPI_HandleTypeDef *bmi088_SPI, uint8_t calibrate)
 
     // 绑定当前用于 BMI088 的 SPI 总线
     BMI088_SPI = bmi088_SPI;
+    // 参考 Chassis 的 bring-up 顺序:
+    // 初始化前先确保两路片选都回到非选中态,给 BMI088 一个明确稳定的空闲总线窗口
+    BMI088_ACCEL_NS_H();
+    BMI088_GYRO_NS_H();
+    // 自制板只接 BMI088 时,MCU 往往比传感器更早进入任务调度;
+    // 这里给一次明确的上电稳定窗口,让 cold boot 更接近 Chassis 上成熟的上电时序。
+    DWT_Delay(0.05f);
 
     init_error |= bmi088_accel_init();
     init_error |= bmi088_gyro_init();
 
-    // 只有“要求在线标定”且“accel/gyro 都成功响应”时,才继续做上电静态标定
-    if (calibrate && !(init_error & BMI088_NO_SENSOR))
+    // 只有“要求在线标定”且 accel/gyro 初始化完全成功时,才继续做上电静态标定
+    if (calibrate && init_error == BMI088_NO_ERROR)
     {
         // 芯片在线时优先做一次上电静态标定
         Calibrate_MPU_Offset(&BMI088);
@@ -83,27 +95,32 @@ BMI088_Error_t bmi088_accel_init(void)
     DWT_Delay(0.001);
     bmi088_read_accel_reg(BMI088_ACC_CHIP_ID, &res);
     DWT_Delay(0.001);
+    bmi088_debug_accel_chip_id_before_reset = res;
 
     // 对 accel 做一次软复位,让寄存器回到已知初始状态
     bmi088_write_accel_reg(BMI088_ACC_SOFTRESET, BMI088_ACC_SOFTRESET_VALUE);
     DWT_Delay(0.08);
 
-    // 复位后再次读取 chip id,确认器件已经重新正常响应
+    // 复位后读取一次 chip id 仅做诊断记录。参考 Chassis:
+    // cold boot 下真正决定“器件是否存在”的是 reset 前的探测,而不是 reset 后立刻的 WHO_AM_I。
     bmi088_read_accel_reg(BMI088_ACC_CHIP_ID, &res);
     DWT_Delay(0.001);
     bmi088_read_accel_reg(BMI088_ACC_CHIP_ID, &res);
     DWT_Delay(0.001);
-
-    // WHO_AM_I 校验失败说明当前总线上没有正确读到 accel 芯片
-    if (res != BMI088_ACC_CHIP_ID_VALUE)
-        return BMI088_ACC_NO_SENSOR_ERROR;
+    bmi088_debug_accel_chip_id_after_reset = res;
 
     // 依次写入初始化表中的 6 项 accel 配置,并逐项读回校验
     for (uint8_t write_reg_num = 0; write_reg_num < BMI088_WRITE_ACCEL_REG_NUM; write_reg_num++)
     {
         // 第 0 列是寄存器地址,第 1 列是目标配置值
         bmi088_write_accel_reg(bmi088_accel_init_table[write_reg_num].reg, bmi088_accel_init_table[write_reg_num].value);
-        DWT_Delay(0.001);
+        // 参考 Chassis: accel 上电相关的前两步对等待时间更敏感,需要更保守的时序
+        if (write_reg_num == 0u)
+            DWT_Delay(0.005f);
+        else if (write_reg_num == 1u)
+            DWT_Delay(0.05f);
+        else
+            DWT_Delay(0.001f);
 
         // 读回刚才写入的寄存器,检查配置是否真正生效
         bmi088_read_accel_reg(bmi088_accel_init_table[write_reg_num].reg, &res);
@@ -129,20 +146,19 @@ BMI088_Error_t bmi088_gyro_init(void)
     DWT_Delay(0.001);
     bmi088_read_gyro_reg(BMI088_GYRO_CHIP_ID, &res);
     DWT_Delay(0.001);
+    bmi088_debug_gyro_chip_id_before_reset = res;
 
     // 对 gyro 做一次软复位,让寄存器回到已知初始状态
     bmi088_write_gyro_reg(BMI088_GYRO_SOFTRESET, BMI088_GYRO_SOFTRESET_VALUE);
     DWT_Delay(0.08);
 
-    // 复位后再次读取 chip id,确认器件已经重新正常响应
+    // 复位后读取一次 chip id 仅做诊断记录,不作为 cold boot 的硬失败条件。
+    // 你的 Chassis 实现同样只在 reset 前验证 gyro 是否存在。
     bmi088_read_gyro_reg(BMI088_GYRO_CHIP_ID, &res);
     DWT_Delay(0.001);
     bmi088_read_gyro_reg(BMI088_GYRO_CHIP_ID, &res);
     DWT_Delay(0.001);
-
-    // WHO_AM_I 校验失败说明当前总线上没有正确读到 gyro 芯片
-    if (res != BMI088_GYRO_CHIP_ID_VALUE)
-        return BMI088_GYRO_NO_SENSOR_ERROR;
+    bmi088_debug_gyro_chip_id_after_reset = res;
 
     // 依次写入初始化表中的 6 项 gyro 配置,并逐项读回校验
     for (uint8_t write_reg_num = 0; write_reg_num < BMI088_WRITE_GYRO_REG_NUM; write_reg_num++)

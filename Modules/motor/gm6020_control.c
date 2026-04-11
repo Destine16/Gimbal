@@ -1,5 +1,7 @@
 #include "gm6020_internal.h"
 
+#include <math.h>
+
 static void GM6020_ResetPIDState(PIDInstance *pid)
 {
     if (pid == NULL)
@@ -25,15 +27,20 @@ static void GM6020_ResetPIDState(PIDInstance *pid)
     DWT_GetDeltaT(&pid->DWT_CNT);
 }
 
-static int16_t GM6020_OutputClamp(float command)
+static int16_t GM6020_OutputClamp(float command, float max_output_raw)
 {
-    if (command > 30000.0f)
+    if ((max_output_raw <= 0.0f) || (max_output_raw > GM6020_VOLTAGE_CMD_MAX_RAW))
     {
-        return 30000;
+        max_output_raw = GM6020_VOLTAGE_CMD_MAX_RAW;
     }
-    if (command < -30000.0f)
+
+    if (command > max_output_raw)
     {
-        return -30000;
+        return (int16_t)max_output_raw;
+    }
+    if (command < -max_output_raw)
+    {
+        return (int16_t)(-max_output_raw);
     }
     return (int16_t)command;
 }
@@ -60,6 +67,7 @@ static void GM6020_ControlStep(GM6020_Instance *motor, uint32_t now_tick)
     float current_ref;
     float current_feedback;
     float voltage_ref;
+    float output_ff_raw;
 
     if (motor == NULL)
     {
@@ -79,15 +87,17 @@ static void GM6020_ControlStep(GM6020_Instance *motor, uint32_t now_tick)
         return;
     }
 
-    angle_ref = motor->angle_ref_deg;
     angle_feedback = (motor->angle_feedback_ptr != NULL) ? *motor->angle_feedback_ptr : 0.0f;
     speed_feedback = (motor->speed_feedback_ptr != NULL) ? *motor->speed_feedback_ptr : 0.0f;
     current_feedback = motor->current_feedback_sign * (float)motor->measure.real_current;
-
+    angle_ref = motor->angle_ref_rad;
     speed_ref = PIDCalculate(&motor->angle_pid, angle_feedback, angle_ref);
     current_ref = PIDCalculate(&motor->speed_pid, speed_feedback, speed_ref);
     voltage_ref = PIDCalculate(&motor->current_pid, current_feedback, current_ref);
-    motor->output_cmd = GM6020_OutputClamp(motor->output_sign * voltage_ref);
+    output_ff_raw = motor->output_ff_sin_raw * sinf(angle_feedback) + motor->output_ff_offset_raw;
+
+    motor->output_cmd = GM6020_OutputClamp(motor->output_sign * voltage_ref + output_ff_raw,
+                                           motor->max_output_raw);
 }
 
 void GM6020_UpdateAll(void)

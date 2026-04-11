@@ -5,10 +5,10 @@
 
 typedef struct __attribute__((packed))
 {
-    int16_t yaw_0p01deg;
-    int16_t pitch_0p01deg;
-    int16_t yaw_speed_0p01rad;
-    int16_t pitch_speed_0p01rad;
+    int16_t yaw_0p01rad;
+    int16_t pitch_0p01rad;
+    int16_t yaw_speed_0p01radps;
+    int16_t pitch_speed_0p01radps;
     uint16_t distance_mm;
     uint8_t track_state;
     uint8_t fire_cmd;

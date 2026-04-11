@@ -31,15 +31,17 @@ typedef struct
     // float atanyz;
 
     // IMU量测值
-    float Gyro[3];  // 角速度
+    float Gyro[3];  // 角速度,单位 rad/s
     float Accel[3]; // 加速度
     // 位姿
-    float Roll;
-    float Pitch;
-    float Yaw;
-    float YawTotalAngle;
+    float Roll;          // unit: rad
+    float Pitch;         // unit: rad
+    float Yaw;           // unit: rad
+    float YawTotalAngle; // unit: rad
 
     uint32_t update_tick;
+    uint32_t init_attempt_count;
+    BMI088_Error_t init_error;
     uint8_t init;
 } INS_t;
 

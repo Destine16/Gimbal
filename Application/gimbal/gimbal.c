@@ -8,6 +8,14 @@
 #include "gimbal_params.h"
 #include "robot_def.h"
 
+#ifndef GIMBAL_YAW_ONLY_TEST_ENABLE
+#define GIMBAL_YAW_ONLY_TEST_ENABLE 0
+#endif
+
+#ifndef GIMBAL_PITCH_ONLY_TEST_ENABLE
+#define GIMBAL_PITCH_ONLY_TEST_ENABLE 0
+#endif
+
 static Publisher_t *gimbal_pub;   // 发布云台反馈数据到 gimbal_feed
 static Subscriber_t *gimbal_sub;  // 订阅 robot_cmd 发来的 gimbal_cmd
 
@@ -16,10 +24,10 @@ static Gimbal_Upload_Data_s gimbal_feedback_data; // 周期上报给上层/视�
 static const INS_t *gimbal_ins;                // 当前 INS 姿态数据只读指针
 static GM6020_Instance *yaw_motor;             // yaw 轴电机实例
 static GM6020_Instance *pitch_motor;           // pitch 轴电机实例
-static float yaw_angle_feedback_deg;           // 映射到 yaw 电机角度环的反馈角
-static float yaw_speed_feedback;               // 映射到 yaw 电机速度环的反馈速度
-static float pitch_angle_feedback_deg;         // 映射到 pitch 电机角度环的反馈角
-static float pitch_speed_feedback;             // 映射到 pitch 电机速度环的反馈速度
+static float yaw_angle_feedback_rad;           // 映射到 yaw 电机角度环的反馈角,单位 rad
+static float yaw_speed_feedback;               // 映射到 yaw 电机速度环的反馈速度,单位 rad/s
+static float pitch_angle_feedback_rad;         // 映射到 pitch 电机角度环的反馈角,单位 rad
+static float pitch_speed_feedback;             // 映射到 pitch 电机速度环的反馈速度,单位 rad/s
 
 static float ClampMotorTarget(float target, const GimbalMotorParam_s *param)
 {
@@ -27,13 +35,13 @@ static float ClampMotorTarget(float target, const GimbalMotorParam_s *param)
     {
         return target;
     }
-    if (target > param->max_angle_deg)
+    if (target > param->max_angle_rad)
     {
-        return param->max_angle_deg;
+        return param->max_angle_rad;
     }
-    if (target < param->min_angle_deg)
+    if (target < param->min_angle_rad)
     {
-        return param->min_angle_deg;
+        return param->min_angle_rad;
     }
     return target;
 }
@@ -51,24 +59,30 @@ void GimbalInit(void)
     // 这里使用“复合字面量 + 指定初始化”现场构造一个匿名 GM6020_Init_Config_s 配置对象,
     // 再通过取地址传给 GM6020_Init(); 这种写法适合只在初始化时使用一次的配置结构体
     yaw_motor = GM6020_Init(&(GM6020_Init_Config_s){
-        .can_handle = &hcan1,
+        .can_handle = &hcan2,
         .motor_id = GimbalYawParam.motor_id,
-        .angle_feedback_ptr = &yaw_angle_feedback_deg,
+        .angle_feedback_ptr = &yaw_angle_feedback_rad,
         .speed_feedback_ptr = &yaw_speed_feedback,
         .current_feedback_sign = GimbalYawParam.current_feedback_sign,
         .output_sign = GimbalYawParam.output_sign,
+        .max_output_raw = GimbalYawParam.max_output_raw,
+        .output_ff_sin_raw = GimbalYawParam.output_ff_sin_raw,
+        .output_ff_offset_raw = GimbalYawParam.output_ff_offset_raw,
         .angle_pid_config = GimbalYawParam.angle_pid,
         .speed_pid_config = GimbalYawParam.speed_pid,
         .current_pid_config = GimbalYawParam.current_pid,
     });
 
     pitch_motor = GM6020_Init(&(GM6020_Init_Config_s){
-        .can_handle = &hcan1,
+        .can_handle = &hcan2,
         .motor_id = GimbalPitchParam.motor_id,
-        .angle_feedback_ptr = &pitch_angle_feedback_deg,
+        .angle_feedback_ptr = &pitch_angle_feedback_rad,
         .speed_feedback_ptr = &pitch_speed_feedback,
         .current_feedback_sign = GimbalPitchParam.current_feedback_sign,
         .output_sign = GimbalPitchParam.output_sign,
+        .max_output_raw = GimbalPitchParam.max_output_raw,
+        .output_ff_sin_raw = GimbalPitchParam.output_ff_sin_raw,
+        .output_ff_offset_raw = GimbalPitchParam.output_ff_offset_raw,
         .angle_pid_config = GimbalPitchParam.angle_pid,
         .speed_pid_config = GimbalPitchParam.speed_pid,
         .current_pid_config = GimbalPitchParam.current_pid,
@@ -82,9 +96,9 @@ void GimbalTask(void)
 
     SubGetMessage(gimbal_sub, &gimbal_cmd_recv);
     gimbal_ins = INS_GetData();
-    yaw_angle_feedback_deg = GimbalYawParam.angle_feedback_sign * gimbal_ins->YawTotalAngle;
+    yaw_angle_feedback_rad = GimbalYawParam.angle_feedback_sign * gimbal_ins->YawTotalAngle;
     yaw_speed_feedback = GimbalYawParam.speed_feedback_sign * gimbal_ins->Gyro[2];
-    pitch_angle_feedback_deg = GimbalPitchParam.angle_feedback_sign * gimbal_ins->Pitch;
+    pitch_angle_feedback_rad = GimbalPitchParam.angle_feedback_sign * gimbal_ins->Roll;
     pitch_speed_feedback = GimbalPitchParam.speed_feedback_sign * gimbal_ins->Gyro[0];
 
     switch (gimbal_cmd_recv.gimbal_mode)
@@ -95,10 +109,22 @@ void GimbalTask(void)
         break;
 
     case GIMBAL_IMU_MODE:
-        GM6020_Enable(yaw_motor);
+#if GIMBAL_PITCH_ONLY_TEST_ENABLE
+        GM6020_Stop(yaw_motor);
         GM6020_Enable(pitch_motor);
-        GM6020_SetAngleRef(yaw_motor, ClampMotorTarget(gimbal_cmd_recv.yaw, &GimbalYawParam));
         GM6020_SetAngleRef(pitch_motor, ClampMotorTarget(gimbal_cmd_recv.pitch, &GimbalPitchParam));
+#else
+        GM6020_Enable(yaw_motor);
+#if GIMBAL_YAW_ONLY_TEST_ENABLE
+        GM6020_Stop(pitch_motor);
+#else
+        GM6020_Enable(pitch_motor);
+#endif
+        GM6020_SetAngleRef(yaw_motor, ClampMotorTarget(gimbal_cmd_recv.yaw, &GimbalYawParam));
+#if !GIMBAL_YAW_ONLY_TEST_ENABLE
+        GM6020_SetAngleRef(pitch_motor, ClampMotorTarget(gimbal_cmd_recv.pitch, &GimbalPitchParam));
+#endif
+#endif
         break;
 
     default:
@@ -112,7 +138,7 @@ void GimbalTask(void)
         memcpy(gimbal_feedback_data.gimbal_imu_data.Gyro, gimbal_ins->Gyro, sizeof(gimbal_feedback_data.gimbal_imu_data.Gyro));
         memcpy(gimbal_feedback_data.gimbal_imu_data.Accel, gimbal_ins->Accel, sizeof(gimbal_feedback_data.gimbal_imu_data.Accel));
         gimbal_feedback_data.gimbal_imu_data.Roll = gimbal_ins->Roll;
-        gimbal_feedback_data.gimbal_imu_data.Pitch = gimbal_ins->Pitch;
+        gimbal_feedback_data.gimbal_imu_data.Pitch = pitch_angle_feedback_rad;
         gimbal_feedback_data.gimbal_imu_data.Yaw = gimbal_ins->Yaw;
         gimbal_feedback_data.gimbal_imu_data.YawTotalAngle = gimbal_ins->YawTotalAngle;
         gimbal_feedback_data.imu_online = imu_online;
