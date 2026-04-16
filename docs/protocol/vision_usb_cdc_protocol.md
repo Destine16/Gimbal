@@ -18,9 +18,9 @@
 - 不直接传 `float`
 - 帧结构固定长度，方便 STM32 直接解析
 
-## 帧格式
+## 下行命令帧
 
-统一格式如下：
+视觉主机发给电控的命令帧格式如下：
 
 ```text
 SOF1 | SOF2 | delta_yaw | delta_pitch | CRC16
@@ -33,6 +33,28 @@ SOF1 | SOF2 | delta_yaw | delta_pitch | CRC16
 - `delta_yaw`：`int16_t`，单位 `0.0001 rad`
 - `delta_pitch`：`int16_t`，单位 `0.0001 rad`
 - `CRC16`：CRC16/MODBUS，低字节在前
+
+固定总帧长：`8 byte`
+
+## 上行状态帧
+
+电控回传给上位机的状态帧格式如下：
+
+```text
+SOF1 | SOF2 | yaw_actual | pitch_actual | last_rx_delta_yaw | last_rx_delta_pitch | CRC16
+```
+
+字段说明：
+
+- `SOF1`：`0x5A`
+- `SOF2`：`0xA5`
+- `yaw_actual`：`int32_t`，单位 `0.0001 rad`
+- `pitch_actual`：`int32_t`，单位 `0.0001 rad`
+- `last_rx_delta_yaw`：`int16_t`，单位 `0.0001 rad`
+- `last_rx_delta_pitch`：`int16_t`，单位 `0.0001 rad`
+- `CRC16`：CRC16/MODBUS，低字节在前
+
+固定总帧长：`16 byte`
 
 ## CRC16 规则
 
@@ -61,8 +83,6 @@ typedef struct __attribute__((packed)) {
 } VisionCmd_t;
 ```
 
-固定总帧长为 `8 byte`
-
 ### 字段含义
 
 - `delta_yaw_1e4rad`
@@ -85,11 +105,45 @@ pitch_target = current_pitch + delta_pitch
 
 - `Application/cmd/robot_cmd.c`
 
+## VisionStatus
+
+### 作用
+
+电控向上位机回传当前云台实际角度，用于显示实时曲线和构造目标/实际对比。
+
+### 数据结构
+
+```c
+typedef struct __attribute__((packed)) {
+    int32_t yaw_actual_1e4rad;
+    int32_t pitch_actual_1e4rad;
+    int16_t last_rx_delta_yaw_1e4rad;
+    int16_t last_rx_delta_pitch_1e4rad;
+} VisionStatus_t;
+```
+
+### 字段含义
+
+- `yaw_actual_1e4rad`
+  - 当前 IMU yaw 反馈角
+  - 单位：`0.0001 rad`
+- `pitch_actual_1e4rad`
+  - 当前 IMU pitch 反馈角
+  - 单位：`0.0001 rad`
+- `last_rx_delta_yaw_1e4rad`
+  - 电控最近一次成功接收到的 yaw 增量命令
+  - 单位：`0.0001 rad`
+- `last_rx_delta_pitch_1e4rad`
+  - 电控最近一次成功接收到的 pitch 增量命令
+  - 单位：`0.0001 rad`
+
 ## 工程中的落地位置
 
 - 协议解析与组包：
   - `Modules/vision/vision_comm.c`
 - USB 接收入口：
+  - `USB_DEVICE/App/usbd_cdc_if.c`
+- USB 发送入口：
   - `USB_DEVICE/App/usbd_cdc_if.c`
 - 指令解释：
   - `Application/cmd/robot_cmd.c`

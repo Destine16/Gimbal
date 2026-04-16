@@ -131,12 +131,17 @@ void RobotCMDInit(void)
 void RobotCMDTask(void)
 {
     VisionCmd_t vision_cmd;
+    VisionStatus_t vision_status;
     uint8_t vision_online;
     uint8_t gimbal_ready;
 
     SubGetMessage(gimbal_feed_sub, &gimbal_fetch_data);
+    memset(&vision_status, 0, sizeof(vision_status));
+    vision_status.yaw_actual_1e4rad = (int32_t)(gimbal_fetch_data.gimbal_imu_data.YawTotalAngle * 10000.0f);
+    vision_status.pitch_actual_1e4rad = (int32_t)(gimbal_fetch_data.gimbal_imu_data.Pitch * 10000.0f);
+    VisionComm_UpdateStatus(&vision_status);
+    VisionComm_Task();
     vision_online = VisionComm_GetVisionCmd(&vision_cmd);
-    (void)vision_online;
 #if GIMBAL_AUTO_YAW_STEP_TEST_ENABLE
     gimbal_ready = gimbal_fetch_data.imu_online;
 #elif GIMBAL_AUTO_PITCH_STEP_TEST_ENABLE

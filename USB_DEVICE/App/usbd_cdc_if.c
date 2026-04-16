@@ -154,6 +154,7 @@ static int8_t CDC_Init_FS(void)
 {
   /* USER CODE BEGIN 3 */
   /* Set Application Buffers */
+  VisionComm_SetUsbHostReady(0u);
   USBD_CDC_SetTxBuffer(&hUsbDeviceFS, UserTxBufferFS, 0);
   USBD_CDC_SetRxBuffer(&hUsbDeviceFS, UserRxBufferFS);
   return (USBD_OK);
@@ -167,6 +168,7 @@ static int8_t CDC_Init_FS(void)
 static int8_t CDC_DeInit_FS(void)
 {
   /* USER CODE BEGIN 4 */
+  VisionComm_SetUsbHostReady(0u);
   return (USBD_OK);
   /* USER CODE END 4 */
 }
@@ -229,7 +231,7 @@ static int8_t CDC_Control_FS(uint8_t cmd, uint8_t* pbuf, uint16_t length)
     break;
 
     case CDC_SET_CONTROL_LINE_STATE:
-
+      VisionComm_SetUsbHostReady(1u);
     break;
 
     case CDC_SEND_BREAK:

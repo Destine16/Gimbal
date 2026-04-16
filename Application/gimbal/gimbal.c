@@ -28,6 +28,10 @@ static float yaw_angle_feedback_rad;           // 映射到 yaw 电机角度环�
 static float yaw_speed_feedback;               // 映射到 yaw 电机速度环的反馈速度,单位 rad/s
 static float pitch_angle_feedback_rad;         // 映射到 pitch 电机角度环的反馈角,单位 rad
 static float pitch_speed_feedback;             // 映射到 pitch 电机速度环的反馈速度,单位 rad/s
+static float yaw_zero_offset_rad;              // yaw 业务零点: 首次 IMU 在线时锁定
+static uint8_t yaw_zero_locked;                // yaw 零点是否已锁定
+static float pitch_zero_offset_rad;            // pitch 业务零点: 首次 IMU 在线时锁定
+static uint8_t pitch_zero_locked;              // pitch 零点是否已锁定
 
 static float ClampMotorTarget(float target, const GimbalMotorParam_s *param)
 {
@@ -50,6 +54,10 @@ void GimbalInit(void)
 {
     memset(&gimbal_cmd_recv, 0, sizeof(gimbal_cmd_recv));
     memset(&gimbal_feedback_data, 0, sizeof(gimbal_feedback_data));
+    yaw_zero_offset_rad = 0.0f;
+    yaw_zero_locked = 0u;
+    pitch_zero_offset_rad = 0.0f;
+    pitch_zero_locked = 0u;
 
     // gimbal 模块: 发布 gimbal_feed,订阅 gimbal_cmd
     gimbal_pub = PubRegister("gimbal_feed", sizeof(Gimbal_Upload_Data_s));
@@ -93,13 +101,41 @@ void GimbalTask(void)
 {
     uint32_t now_tick = HAL_GetTick();
     uint8_t imu_online = 0u;
+    float yaw_total_angle_zeroed_rad = 0.0f;
+    float pitch_angle_raw_rad = 0.0f;
+    float pitch_angle_zeroed_rad = 0.0f;
 
     SubGetMessage(gimbal_sub, &gimbal_cmd_recv);
     gimbal_ins = INS_GetData();
-    yaw_angle_feedback_rad = GimbalYawParam.angle_feedback_sign * gimbal_ins->YawTotalAngle;
-    yaw_speed_feedback = GimbalYawParam.speed_feedback_sign * gimbal_ins->Gyro[2];
-    pitch_angle_feedback_rad = GimbalPitchParam.angle_feedback_sign * gimbal_ins->Roll;
-    pitch_speed_feedback = GimbalPitchParam.speed_feedback_sign * gimbal_ins->Gyro[0];
+    yaw_angle_feedback_rad = 0.0f;
+    yaw_speed_feedback = 0.0f;
+    pitch_angle_feedback_rad = 0.0f;
+    pitch_speed_feedback = 0.0f;
+    if (gimbal_ins != NULL)
+    {
+        imu_online = INS_IsOnline();
+        if (imu_online)
+        {
+            if (!yaw_zero_locked)
+            {
+                yaw_zero_offset_rad = gimbal_ins->YawTotalAngle;
+                yaw_zero_locked = 1u;
+            }
+            yaw_total_angle_zeroed_rad = gimbal_ins->YawTotalAngle - yaw_zero_offset_rad;
+
+            pitch_angle_raw_rad = GimbalPitchParam.angle_feedback_sign * gimbal_ins->Roll;
+            if (!pitch_zero_locked)
+            {
+                pitch_zero_offset_rad = pitch_angle_raw_rad;
+                pitch_zero_locked = 1u;
+            }
+            pitch_angle_zeroed_rad = pitch_angle_raw_rad - pitch_zero_offset_rad;
+        }
+        yaw_angle_feedback_rad = GimbalYawParam.angle_feedback_sign * yaw_total_angle_zeroed_rad;
+        yaw_speed_feedback = GimbalYawParam.speed_feedback_sign * gimbal_ins->Gyro[2];
+        pitch_angle_feedback_rad = pitch_angle_zeroed_rad;
+        pitch_speed_feedback = GimbalPitchParam.speed_feedback_sign * gimbal_ins->Gyro[0];
+    }
 
     switch (gimbal_cmd_recv.gimbal_mode)
     {
@@ -133,14 +169,13 @@ void GimbalTask(void)
 
     if (gimbal_ins != NULL)
     {
-        imu_online = INS_IsOnline();
         memcpy(gimbal_feedback_data.gimbal_imu_data.q, gimbal_ins->q, sizeof(gimbal_feedback_data.gimbal_imu_data.q));
         memcpy(gimbal_feedback_data.gimbal_imu_data.Gyro, gimbal_ins->Gyro, sizeof(gimbal_feedback_data.gimbal_imu_data.Gyro));
         memcpy(gimbal_feedback_data.gimbal_imu_data.Accel, gimbal_ins->Accel, sizeof(gimbal_feedback_data.gimbal_imu_data.Accel));
         gimbal_feedback_data.gimbal_imu_data.Roll = gimbal_ins->Roll;
         gimbal_feedback_data.gimbal_imu_data.Pitch = pitch_angle_feedback_rad;
         gimbal_feedback_data.gimbal_imu_data.Yaw = gimbal_ins->Yaw;
-        gimbal_feedback_data.gimbal_imu_data.YawTotalAngle = gimbal_ins->YawTotalAngle;
+        gimbal_feedback_data.gimbal_imu_data.YawTotalAngle = yaw_total_angle_zeroed_rad;
         gimbal_feedback_data.imu_online = imu_online;
     }
     else

@@ -4,3 +4,6 @@ mx.scratch
 .vscode/
 .clangd
 .settings/
+data/
+__pycache__/
+*.pyc
