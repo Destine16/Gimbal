@@ -3,5 +3,7 @@
 
 void GimbalInit(void);
 void GimbalTask(void);
+void GimbalResetYawControlState(void);
+void GimbalResetPitchControlState(void);
 
 #endif

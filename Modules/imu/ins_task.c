@@ -84,7 +84,6 @@ const INS_t *INS_Init(void)
 {
     BMI088_Error_t init_error;
     float init_quaternion[4] = {0};
-    uint8_t enable_startup_calibration = 1u;
 
     if (INS.init)
         return &INS;
@@ -92,13 +91,7 @@ const INS_t *INS_Init(void)
     INS.init_attempt_count++;
     BMI088_AsyncDisable();
 
-#if IMU_ONLY_BRINGUP_ENABLE
-    // IMU-only bring-up 参考 Chassis 的快速初始化思路:
-    // 跳过启动期长时间阻塞的静态标定,优先尽快跑通 BMI088 + EKF + RTT 数据链路
-    enable_startup_calibration = 0u;
-#endif
-
-    init_error = BMI088Init(&hspi1, enable_startup_calibration);
+    init_error = BMI088Init(&hspi1);
     INS.init_error = init_error;
     if (init_error != BMI088_NO_ERROR)
     {

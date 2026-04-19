@@ -8,6 +8,9 @@ static uint32_t CPU_FREQ_Hz,    // CPU 主频,单位 Hz
 static uint32_t CYCCNT_RountCount; // 记录 32 位 CYCCNT 已经溢出的次数
 static uint32_t CYCCNT_LAST;       // 上一次看到的 CYCCNT,用于判断是否回绕
 static uint64_t CYCCNT64;          // 软件扩展后的 64 位 cycle 计数,168MHz 下理论上约 3480 年才回绕
+static uint8_t DWT_Ready;          // DWT 是否已完成一次可靠初始化
+
+#define DWT_FALLBACK_CPU_FREQ_HZ 168000000u
 
 // 通过比较本次/上次 CYCCNT 是否回绕来更新软件高位;
 // 因此两次调用之间的间隔必须小于一次 32 位计数器溢出周期;
@@ -30,6 +33,21 @@ static void DWT_CNT_Update(void)
 
 void DWT_Init(uint32_t CPU_Freq_mHz)
 {
+    uint32_t cpu_freq_hz = CPU_Freq_mHz * 1000000u;
+
+    if (cpu_freq_hz == 0u)
+    {
+        cpu_freq_hz = HAL_RCC_GetHCLKFreq();
+    }
+    if (cpu_freq_hz == 0u)
+    {
+        cpu_freq_hz = SystemCoreClock;
+    }
+    if (cpu_freq_hz == 0u)
+    {
+        cpu_freq_hz = DWT_FALLBACK_CPU_FREQ_HZ;
+    }
+
     /* 使能DWT外设 */
     CoreDebug->DEMCR |= CoreDebug_DEMCR_TRCENA_Msk;
 
@@ -39,18 +57,38 @@ void DWT_Init(uint32_t CPU_Freq_mHz)
     /* 使能Cortex-M DWT CYCCNT寄存器 */
     DWT->CTRL |= DWT_CTRL_CYCCNTENA_Msk;
 
-    CPU_FREQ_Hz = CPU_Freq_mHz * 1000000; // 传入的是 MHz,这里换算成 Hz
+    CPU_FREQ_Hz = cpu_freq_hz;
     CPU_FREQ_Hz_ms = CPU_FREQ_Hz / 1000;  // 预先缓存每毫秒对应的 cycle 数
     CPU_FREQ_Hz_us = CPU_FREQ_Hz / 1000000; // 预先缓存每微秒对应的 cycle 数
     CYCCNT_RountCount = 0; // DWT 初始化时软件高位计数清零
+    CYCCNT_LAST = 0u;
+    DWT_Ready = 1u;
 
     // 初始化软件高位和上次计数快照
     DWT_CNT_Update();
 }
 
+static void DWT_EnableCycleCounter(void)
+{
+    CoreDebug->DEMCR |= CoreDebug_DEMCR_TRCENA_Msk;
+    DWT->CTRL |= DWT_CTRL_CYCCNTENA_Msk;
+}
+
+static void DWT_EnsureReady(void)
+{
+    if (!DWT_Ready || (CPU_FREQ_Hz == 0u))
+    {
+        DWT_Init(HAL_RCC_GetHCLKFreq() / 1000000u);
+        return;
+    }
+
+    DWT_EnableCycleCounter();
+}
+
 // 返回距离上次 cnt_last 快照的秒级时间差,并刷新快照
 float DWT_GetDeltaT(uint32_t *cnt_last)
 {
+    DWT_EnsureReady();
     volatile uint32_t cnt_now = DWT->CYCCNT;
     // 即使 cnt_now < *cnt_last 也不一定是错误,这通常表示 32 位 CYCCNT 在两次采样之间回绕了一次;
     // 这里利用 uint32_t 减法的模 2^32 回绕特性,可直接得到“跨过一次回绕后的真实 cycle 差值”:
@@ -68,6 +106,7 @@ float DWT_GetDeltaT(uint32_t *cnt_last)
 // double 版本的 delta t,用于需要更高数值精度的场合
 double DWT_GetDeltaT64(uint32_t *cnt_last)
 {
+    DWT_EnsureReady();
     volatile uint32_t cnt_now = DWT->CYCCNT;
     // 与 float 版本相同: 若 cnt_now < *cnt_last,则按“发生过一次 32 位回绕”处理;
     // uint32_t 无符号减法会自动给出跨回绕后的真实 tick 差
@@ -82,6 +121,7 @@ double DWT_GetDeltaT64(uint32_t *cnt_last)
 // 将当前 cycle 计数换算成 s/ms/us 三段式系统时间
 void DWT_SysTimeUpdate(void)
 {
+    DWT_EnsureReady();
     volatile uint32_t cnt_now = DWT->CYCCNT;
     static uint64_t CNT_TEMP1, CNT_TEMP2, CNT_TEMP3;
 
@@ -129,9 +169,23 @@ uint64_t DWT_GetTimeline_us(void)
 // 基于 CYCCNT 的忙等延时,不会主动让出 CPU
 void DWT_Delay(float Delay)
 {
-    uint32_t tickstart = DWT->CYCCNT;
+    uint32_t systick_start = HAL_GetTick();
+    uint32_t wait_ms = (uint32_t)(Delay * 1000.0f) + 2u;
     float wait = Delay;
 
+    if (Delay <= 0.0f)
+    {
+        return;
+    }
+
+    DWT_EnsureReady();
+    uint32_t tickstart = DWT->CYCCNT;
+
     while ((DWT->CYCCNT - tickstart) < wait * (float)CPU_FREQ_Hz)
-        ;
+    {
+        if ((HAL_GetTick() - systick_start) > wait_ms)
+        {
+            break;
+        }
+    }
 }

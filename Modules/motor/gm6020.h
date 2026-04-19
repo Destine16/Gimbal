@@ -40,6 +40,7 @@ typedef struct
     float max_output_raw;
     float output_ff_sin_raw;
     float output_ff_offset_raw;
+    float output_ff_hyst_raw;
     PID_Init_Config_s angle_pid_config;
     PID_Init_Config_s speed_pid_config;
     PID_Init_Config_s current_pid_config;
@@ -64,21 +65,84 @@ typedef struct
     float max_output_raw;
     float output_ff_sin_raw;
     float output_ff_offset_raw;
+    float output_ff_hyst_raw;
+    float output_ff_motion_sign;
 
     PIDInstance angle_pid;   // 运行时角度环 PID 实例; 在线调参应改这一份,而不是参数模板
     PIDInstance speed_pid;   // 运行时速度环 PID 实例; 调试器里可看 Err/Pout/Iout/Dout/Output
     PIDInstance current_pid; // 运行时电流环 PID 实例
 
     float angle_ref_rad; // 当前目标角度,调试器里常看的设定值
+    float angle_feedback_rad;
+    float speed_ref_rad_s;
+    float speed_feedback_rad_s;
+    float current_ref_raw;
+    float current_feedback_raw;
+    float voltage_ref_raw;
+    float output_ff_raw;
     int16_t output_cmd;  // 本轮最终发给电机的输出命令
 } GM6020_Instance;
+
+typedef struct
+{
+    uint8_t valid;
+    uint8_t enabled;
+    uint8_t online;
+    uint8_t motor_id;
+    float angle_ref_rad;
+    float angle_feedback_rad;
+    float speed_ref_rad_s;
+    float speed_feedback_rad_s;
+    float current_ref_raw;
+    float current_feedback_raw;
+    float voltage_ref_raw;
+    float output_ff_raw;
+    int16_t output_cmd;
+    int16_t real_current;
+    float motor_speed_rad_s;
+    float angle_pid_pout;
+    float angle_pid_iout;
+    float angle_pid_dout;
+    float angle_pid_output;
+    float speed_pid_pout;
+    float speed_pid_iout;
+    float speed_pid_dout;
+    float speed_pid_output;
+    float current_pid_pout;
+    float current_pid_iout;
+    float current_pid_dout;
+    float current_pid_output;
+} GM6020_ControlSnapshot_s;
+
+typedef struct
+{
+    uint32_t tx_attempt_count;
+    uint32_t tx_success_count;
+    uint32_t tx_fail_count;
+    uint32_t tx_abort_count;
+    uint32_t last_tx_tick_ms;
+    uint32_t last_tx_mailbox;
+    uint32_t last_tx_free_level;
+    uint32_t last_hal_error;
+    uint32_t last_can_error_code;
+    uint32_t last_can_esr;
+    uint32_t last_can_tsr;
+    uint16_t last_tx_std_id;
+    uint8_t last_tx_group;
+    uint8_t last_tx_data[8];
+    int16_t last_output_cmd[GM6020_MAX_NUM];
+} GM6020_Debug_s;
+
+extern volatile GM6020_Debug_s gm6020_debug;
 
 void GM6020_CAN_Init(CAN_HandleTypeDef *hcan);
 GM6020_Instance *GM6020_Init(const GM6020_Init_Config_s *config);
 void GM6020_SetAngleRef(GM6020_Instance *motor, float angle_rad);
 void GM6020_Enable(GM6020_Instance *motor);
 void GM6020_Stop(GM6020_Instance *motor);
+void GM6020_ResetControlState(GM6020_Instance *motor);
 uint8_t GM6020_IsOnline(const GM6020_Instance *motor, uint32_t now_tick);
+uint8_t GM6020_GetControlSnapshot(uint8_t motor_id, GM6020_ControlSnapshot_s *snapshot);
 void GM6020_ControlAll(void);
 void GM6020_RxFifo0Callback(CAN_HandleTypeDef *hcan);
 

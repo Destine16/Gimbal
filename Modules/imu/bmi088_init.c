@@ -46,9 +46,7 @@ static const BMI088_InitItem_t bmi088_gyro_init_table[BMI088_WRITE_GYRO_REG_NUM]
         {BMI088_GYRO_INT3_INT4_IO_MAP, BMI088_GYRO_DRDY_IO_INT3, BMI088_GYRO_INT3_INT4_IO_MAP_ERROR}
 };
 
-static void Calibrate_MPU_Offset(IMU_Data_t *bmi088);
-
-BMI088_Error_t BMI088Init(SPI_HandleTypeDef *bmi088_SPI, uint8_t calibrate)
+BMI088_Error_t BMI088Init(SPI_HandleTypeDef *bmi088_SPI)
 {
     BMI088_Error_t init_error = BMI088_NO_ERROR;
 
@@ -65,22 +63,13 @@ BMI088_Error_t BMI088Init(SPI_HandleTypeDef *bmi088_SPI, uint8_t calibrate)
     init_error |= bmi088_accel_init();
     init_error |= bmi088_gyro_init();
 
-    // 只有“要求在线标定”且 accel/gyro 初始化完全成功时,才继续做上电静态标定
-    if (calibrate && init_error == BMI088_NO_ERROR)
-    {
-        // 芯片在线时优先做一次上电静态标定
-        Calibrate_MPU_Offset(&BMI088);
-    }
-    else
-    {
-        // 不在线标定时直接回退到离线默认参数
-        BMI088.GyroOffset[0] = GxOFFSET;
-        BMI088.GyroOffset[1] = GyOFFSET;
-        BMI088.GyroOffset[2] = GzOFFSET;
-        BMI088.gNorm = gNORM;
-        BMI088.AccelScale = 9.81f / BMI088.gNorm;
-        BMI088.TempWhenCali = 40;
-    }
+    // 使用离线静态数据固化出的默认参数; 重新标定时通过离线数据处理更新这些宏。
+    BMI088.GyroOffset[0] = GxOFFSET;
+    BMI088.GyroOffset[1] = GyOFFSET;
+    BMI088.GyroOffset[2] = GzOFFSET;
+    BMI088.gNorm = gNORM;
+    BMI088.AccelScale = 9.81f / BMI088.gNorm;
+    BMI088.TempWhenCali = 23.5f;
 
     return init_error;
 }
@@ -179,145 +168,4 @@ BMI088_Error_t bmi088_gyro_init(void)
     }
 
     return local_error;
-}
-
-static void Calibrate_MPU_Offset(IMU_Data_t *bmi088)
-{
-    static float startTime;          // 本轮静态标定开始时间,用于整体超时保护
-    static uint16_t CaliTimes = 6000; // 每轮静态标定累计采样次数
-    uint8_t buf[8] = {0, 0, 0, 0, 0, 0}; // 阻塞读 accel/gyro 时复用的临时字节缓冲
-    int16_t raw_data;                // 两字节拼接后的单轴原始有符号值
-    float gyroMax[3], gyroMin[3];    // 本轮采样窗口内三轴 gyro 的最大/最小值,用于判断静止稳定性
-    float gNormTemp = 0.0f, gNormMax = 0.0f, gNormMin = 0.0f; // 当前重力模长及其本轮最大/最小值
-    uint8_t unstable_round = 0;      // 本轮是否已判定不稳定; 不稳定则整轮样本直接作废
-
-    startTime = DWT_GetTimeline_s();
-    do
-    {
-        if (DWT_GetTimeline_s() - startTime > 12)
-        {
-            // 超时仍不稳定时,回退到离线默认标定参数
-            bmi088->GyroOffset[0] = GxOFFSET;
-            bmi088->GyroOffset[1] = GyOFFSET;
-            bmi088->GyroOffset[2] = GzOFFSET;
-            bmi088->gNorm = gNORM;
-            bmi088->TempWhenCali = 40;
-            break;
-        }
-
-        DWT_Delay(0.005);
-        // 每次进入新一轮标定前,先清空本轮累计量和“不稳定”标志
-        bmi088->gNorm = 0;
-        bmi088->GyroOffset[0] = 0;
-        bmi088->GyroOffset[1] = 0;
-        bmi088->GyroOffset[2] = 0;
-        unstable_round = 0;
-
-        for (uint16_t i = 0; i < CaliTimes; ++i)
-        {
-            // 标定阶段仍使用阻塞读链路,保证流程简单可控
-            // 从 accel 数据寄存器起始地址开始连续读 6 字节: X_L/X_H, Y_L/Y_H, Z_L/Z_H
-            bmi088_read_accel_regs(BMI088_ACCEL_XOUT_L, buf, 6);
-            raw_data = (int16_t)((buf[1]) << 8) | buf[0];
-            bmi088->Accel[0] = raw_data * bmi088_ctx.accel_sen;
-            raw_data = (int16_t)((buf[3]) << 8) | buf[2];
-            bmi088->Accel[1] = raw_data * bmi088_ctx.accel_sen;
-            raw_data = (int16_t)((buf[5]) << 8) | buf[4];
-            bmi088->Accel[2] = raw_data * bmi088_ctx.accel_sen;
-            gNormTemp = sqrtf(bmi088->Accel[0] * bmi088->Accel[0] +
-                              bmi088->Accel[1] * bmi088->Accel[1] +
-                              bmi088->Accel[2] * bmi088->Accel[2]);
-            bmi088->gNorm += gNormTemp;
-
-            // 从 gyro chip id 开始连续读 8 字节: chip id + 保留位 + X/Y/Z 三轴原始数据
-            bmi088_read_gyro_regs(BMI088_GYRO_CHIP_ID, buf, 8);
-            if (buf[0] == BMI088_GYRO_CHIP_ID_VALUE)
-            {
-                raw_data = (int16_t)((buf[3]) << 8) | buf[2];
-                bmi088->Gyro[0] = raw_data * bmi088_ctx.gyro_sen;
-                bmi088->GyroOffset[0] += bmi088->Gyro[0];
-                raw_data = (int16_t)((buf[5]) << 8) | buf[4];
-                bmi088->Gyro[1] = raw_data * bmi088_ctx.gyro_sen;
-                bmi088->GyroOffset[1] += bmi088->Gyro[1];
-                raw_data = (int16_t)((buf[7]) << 8) | buf[6];
-                bmi088->Gyro[2] = raw_data * bmi088_ctx.gyro_sen;
-                bmi088->GyroOffset[2] += bmi088->Gyro[2];
-            }
-
-            if (i == 0)
-            {
-                // 第 1 帧先作为本轮极值初值; 后续采样再不断更新最大/最小值,用于统计静止时的波动范围
-                gNormMax = gNormTemp;
-                gNormMin = gNormTemp;
-                for (uint8_t j = 0; j < 3; ++j)
-                {
-                    gyroMax[j] = bmi088->Gyro[j];
-                    gyroMin[j] = bmi088->Gyro[j];
-                }
-            }
-            else
-            {
-                if (gNormTemp > gNormMax)
-                    gNormMax = gNormTemp;
-                if (gNormTemp < gNormMin)
-                    gNormMin = gNormTemp;
-                for (uint8_t j = 0; j < 3; ++j)
-                {
-                    if (bmi088->Gyro[j] > gyroMax[j])
-                        gyroMax[j] = bmi088->Gyro[j];
-                    if (bmi088->Gyro[j] < gyroMin[j])
-                        gyroMin[j] = bmi088->Gyro[j];
-                }
-            }
-
-            bmi088_ctx.gnorm_diff = gNormMax - gNormMin;
-            for (uint8_t j = 0; j < 3; ++j)
-                bmi088_ctx.gyro_diff[j] = gyroMax[j] - gyroMin[j];
-
-            // 若本轮采样中途已经出现明显晃动,则整轮数据直接判废
-            if (bmi088_ctx.gnorm_diff > 0.5f ||
-                bmi088_ctx.gyro_diff[0] > 0.15f ||
-                bmi088_ctx.gyro_diff[1] > 0.15f ||
-                bmi088_ctx.gyro_diff[2] > 0.15f)
-            {
-                // 这里只跳出内层 for; 随后通过 unstable_round 让本轮直接 continue 到下一轮 do
-                unstable_round = 1;
-                break;
-            }
-
-            DWT_Delay(0.0005);
-        }
-
-        if (unstable_round)
-        {
-            // 本轮样本已判废,不再继续算平均值/温度,直接进入下一轮静态标定
-            bmi088_ctx.cali_count++;
-            continue;
-        }
-
-        bmi088->gNorm /= (float)CaliTimes;
-        for (uint8_t i = 0; i < 3; ++i)
-            bmi088->GyroOffset[i] /= (float)CaliTimes;
-
-        // 记下标定时温度,后面如果要做温漂补偿可以作为参考
-        bmi088_read_accel_regs(BMI088_TEMP_M, buf, 2);
-        raw_data = (int16_t)((buf[0] << 3) | (buf[1] >> 5));
-        if (raw_data > 1023)
-            raw_data -= 2048;
-        bmi088->TempWhenCali = raw_data * BMI088_TEMP_FACTOR + BMI088_TEMP_OFFSET;
-
-        bmi088_ctx.cali_count++;
-    // 走到这里说明本轮已经完整采满 CaliTimes 次; 若均值或波动仍不满足要求,则整轮重来
-    } while (bmi088_ctx.gnorm_diff > 0.5f ||
-             fabsf(bmi088->gNorm - 9.8f) > 0.5f ||
-             bmi088_ctx.gyro_diff[0] > 0.15f ||
-             bmi088_ctx.gyro_diff[1] > 0.15f ||
-             bmi088_ctx.gyro_diff[2] > 0.15f ||
-             fabsf(bmi088->GyroOffset[0]) > 0.01f ||
-             fabsf(bmi088->GyroOffset[1]) > 0.01f ||
-             fabsf(bmi088->GyroOffset[2]) > 0.01f);
-
-    // 静止标定时理论上应满足 |a| = g = 9.81 m/s^2; 这里用本轮测得的平均重力模长 gNorm
-    // 反推出一个统一缩放系数,供后续每次读取 accel 时整体修正到标准重力尺度
-    bmi088->AccelScale = 9.81f / bmi088->gNorm;
 }

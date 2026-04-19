@@ -25,7 +25,6 @@
 
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
-#include "bsp_dwt.h"
 #include "robot.h"
 #include "robot_def.h"
 
@@ -89,7 +88,6 @@ extern void StartINSTask(void *argument);
 extern void StartMotorTask(void *argument);
 extern void StartDaemonTask(void *argument);
 
-extern void MX_USB_DEVICE_Init(void);
 void MX_FREERTOS_Init(void); /* (MISRA C 2004 rule 8.1) */
 
 /**
@@ -101,7 +99,6 @@ void MX_FREERTOS_Init(void) {
   /* USER CODE BEGIN Init */
   // 调度器启动前完成一次性业务初始化; 任务本体只负责周期运行
 #if IMU_ONLY_BRINGUP_ENABLE
-  DWT_Init(HAL_RCC_GetHCLKFreq() / 1000000U);
 #else
   RobotInit();
 #endif
@@ -160,8 +157,6 @@ void MX_FREERTOS_Init(void) {
 /* USER CODE END Header_StartRobotTask */
 void StartRobotTask(void *argument)
 {
-  /* init code for USB_DEVICE */
-  MX_USB_DEVICE_Init();
   /* USER CODE BEGIN StartRobotTask */
   // robotTask 周期: 5ms
   // 职责: 运行应用层状态机,在 robot_cmd 和 gimbal 之间流转控制/反馈消息

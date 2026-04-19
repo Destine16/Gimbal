@@ -43,10 +43,7 @@ typedef struct
 {
     float accel_sen;         // accel 原始计数到工程量的换算系数
     float gyro_sen;          // gyro 原始计数到工程量的换算系数
-    float gyro_diff[3];      // 静态标定时的陀螺零偏波动观测量
-    float gnorm_diff;        // 静态标定时的重力模长波动观测量
     uint8_t cali_offset;     // 运行时是否减去静态零偏
-    int16_t cali_count;      // 标定重试次数统计
     BMI088_AsyncContext_t async;
 } BMI088_Context_t;
 

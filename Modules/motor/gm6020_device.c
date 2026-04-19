@@ -6,6 +6,7 @@
 
 GM6020_Instance gm6020_list[GM6020_MAX_NUM]; // 运行时电机实例数组,调试器里可直接 watch gm6020_list[i]
 uint8_t gm6020_count = 0u;
+volatile GM6020_Debug_s gm6020_debug;
 
 uint16_t GM6020_DaemonReloadCount(void)
 {
@@ -69,6 +70,8 @@ GM6020_Instance *GM6020_Init(const GM6020_Init_Config_s *config)
     motor->max_output_raw = config->max_output_raw;
     motor->output_ff_sin_raw = config->output_ff_sin_raw;
     motor->output_ff_offset_raw = config->output_ff_offset_raw;
+    motor->output_ff_hyst_raw = config->output_ff_hyst_raw;
+    motor->output_ff_motion_sign = 0.0f;
     if ((motor->max_output_raw <= 0.0f) || (motor->max_output_raw > GM6020_VOLTAGE_CMD_MAX_RAW))
     {
         motor->max_output_raw = GM6020_VOLTAGE_CMD_MAX_RAW;
@@ -125,4 +128,55 @@ void GM6020_Stop(GM6020_Instance *motor)
 uint8_t GM6020_IsOnline(const GM6020_Instance *motor, uint32_t now_tick)
 {
     return GM6020_RuntimeOnline(motor, now_tick);
+}
+
+uint8_t GM6020_GetControlSnapshot(uint8_t motor_id, GM6020_ControlSnapshot_s *snapshot)
+{
+    uint32_t now_tick = HAL_GetTick();
+
+    if (snapshot == NULL)
+    {
+        return 0u;
+    }
+
+    memset(snapshot, 0, sizeof(*snapshot));
+    for (uint8_t i = 0u; i < gm6020_count; ++i)
+    {
+        GM6020_Instance *motor = &gm6020_list[i];
+        if (motor->motor_id != motor_id)
+        {
+            continue;
+        }
+
+        snapshot->valid = 1u;
+        snapshot->enabled = motor->enabled;
+        snapshot->online = GM6020_RuntimeOnline(motor, now_tick);
+        snapshot->motor_id = motor->motor_id;
+        snapshot->angle_ref_rad = motor->angle_ref_rad;
+        snapshot->angle_feedback_rad = motor->angle_feedback_rad;
+        snapshot->speed_ref_rad_s = motor->speed_ref_rad_s;
+        snapshot->speed_feedback_rad_s = motor->speed_feedback_rad_s;
+        snapshot->current_ref_raw = motor->current_ref_raw;
+        snapshot->current_feedback_raw = motor->current_feedback_raw;
+        snapshot->voltage_ref_raw = motor->voltage_ref_raw;
+        snapshot->output_ff_raw = motor->output_ff_raw;
+        snapshot->output_cmd = motor->output_cmd;
+        snapshot->real_current = motor->measure.real_current;
+        snapshot->motor_speed_rad_s = motor->measure.speed_rad_s;
+        snapshot->angle_pid_pout = motor->angle_pid.Pout;
+        snapshot->angle_pid_iout = motor->angle_pid.Iout;
+        snapshot->angle_pid_dout = motor->angle_pid.Dout;
+        snapshot->angle_pid_output = motor->angle_pid.Output;
+        snapshot->speed_pid_pout = motor->speed_pid.Pout;
+        snapshot->speed_pid_iout = motor->speed_pid.Iout;
+        snapshot->speed_pid_dout = motor->speed_pid.Dout;
+        snapshot->speed_pid_output = motor->speed_pid.Output;
+        snapshot->current_pid_pout = motor->current_pid.Pout;
+        snapshot->current_pid_iout = motor->current_pid.Iout;
+        snapshot->current_pid_dout = motor->current_pid.Dout;
+        snapshot->current_pid_output = motor->current_pid.Output;
+        return 1u;
+    }
+
+    return 0u;
 }

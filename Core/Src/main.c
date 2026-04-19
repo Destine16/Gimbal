@@ -27,6 +27,7 @@
 
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
+#include "bsp_dwt.h"
 
 /* USER CODE END Includes */
 
@@ -87,6 +88,7 @@ int main(void)
   SystemClock_Config();
 
   /* USER CODE BEGIN SysInit */
+  DWT_Init(HAL_RCC_GetHCLKFreq() / 1000000U);
 
   /* USER CODE END SysInit */
 
@@ -96,6 +98,7 @@ int main(void)
   MX_SPI1_Init();
   MX_CAN2_Init();
   /* USER CODE BEGIN 2 */
+  MX_USB_DEVICE_Init();
 
   /* USER CODE END 2 */
 

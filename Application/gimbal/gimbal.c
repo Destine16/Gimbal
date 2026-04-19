@@ -76,6 +76,7 @@ void GimbalInit(void)
         .max_output_raw = GimbalYawParam.max_output_raw,
         .output_ff_sin_raw = GimbalYawParam.output_ff_sin_raw,
         .output_ff_offset_raw = GimbalYawParam.output_ff_offset_raw,
+        .output_ff_hyst_raw = GimbalYawParam.output_ff_hyst_raw,
         .angle_pid_config = GimbalYawParam.angle_pid,
         .speed_pid_config = GimbalYawParam.speed_pid,
         .current_pid_config = GimbalYawParam.current_pid,
@@ -91,10 +92,21 @@ void GimbalInit(void)
         .max_output_raw = GimbalPitchParam.max_output_raw,
         .output_ff_sin_raw = GimbalPitchParam.output_ff_sin_raw,
         .output_ff_offset_raw = GimbalPitchParam.output_ff_offset_raw,
+        .output_ff_hyst_raw = GimbalPitchParam.output_ff_hyst_raw,
         .angle_pid_config = GimbalPitchParam.angle_pid,
         .speed_pid_config = GimbalPitchParam.speed_pid,
         .current_pid_config = GimbalPitchParam.current_pid,
     });
+}
+
+void GimbalResetYawControlState(void)
+{
+    GM6020_ResetControlState(yaw_motor);
+}
+
+void GimbalResetPitchControlState(void)
+{
+    GM6020_ResetControlState(pitch_motor);
 }
 
 void GimbalTask(void)

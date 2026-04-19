@@ -41,8 +41,46 @@ static void GM6020_PackTxForBus(CAN_HandleTypeDef *hcan, uint8_t tx_buf[2][8], u
 
         tx_buf[motor->tx_group][2u * motor->tx_index] = (uint8_t)(motor->output_cmd >> 8);
         tx_buf[motor->tx_group][2u * motor->tx_index + 1u] = (uint8_t)(motor->output_cmd & 0xFF);
+        gm6020_debug.last_output_cmd[i] = motor->output_cmd;
         active_group[motor->tx_group] = 1u;
     }
+}
+
+static void GM6020_DebugCopyTxFrame(uint16_t std_id, uint8_t group, const uint8_t data[8])
+{
+    gm6020_debug.last_tx_tick_ms = HAL_GetTick();
+    gm6020_debug.last_tx_std_id = std_id;
+    gm6020_debug.last_tx_group = group;
+    for (uint8_t i = 0u; i < 8u; ++i)
+    {
+        gm6020_debug.last_tx_data[i] = data[i];
+    }
+}
+
+static void GM6020_DebugUpdateCanState(CAN_HandleTypeDef *hcan)
+{
+    if (hcan == NULL)
+    {
+        return;
+    }
+
+    gm6020_debug.last_tx_free_level = HAL_CAN_GetTxMailboxesFreeLevel(hcan);
+    gm6020_debug.last_hal_error = HAL_CAN_GetError(hcan);
+    gm6020_debug.last_can_error_code = hcan->ErrorCode;
+    gm6020_debug.last_can_esr = hcan->Instance->ESR;
+    gm6020_debug.last_can_tsr = hcan->Instance->TSR;
+}
+
+static void GM6020_AbortStaleTx(CAN_HandleTypeDef *hcan)
+{
+    if (hcan == NULL)
+    {
+        return;
+    }
+
+    (void)HAL_CAN_AbortTxRequest(hcan, CAN_TX_MAILBOX0 | CAN_TX_MAILBOX1 | CAN_TX_MAILBOX2);
+    gm6020_debug.tx_abort_count++;
+    GM6020_DebugUpdateCanState(hcan);
 }
 
 static void GM6020_SendBus(CAN_HandleTypeDef *hcan)
@@ -73,11 +111,30 @@ static void GM6020_SendBus(CAN_HandleTypeDef *hcan)
         }
 
         tx_header.StdId = tx_std_id[group];
+        gm6020_debug.tx_attempt_count++;
+        GM6020_DebugCopyTxFrame(tx_header.StdId, group, tx_buf[group]);
+        GM6020_DebugUpdateCanState(hcan);
+        if (gm6020_debug.last_tx_free_level == 0u)
+        {
+            gm6020_debug.tx_fail_count++;
+            GM6020_AbortStaleTx(hcan);
+            break;
+        }
         // 发送失败时保留本轮 output_cmd,等待下一周期重发
         if (HAL_CAN_AddTxMessage(hcan, &tx_header, tx_buf[group], &tx_mailbox) != HAL_OK)
         {
+            gm6020_debug.tx_fail_count++;
+            GM6020_DebugUpdateCanState(hcan);
+            if ((gm6020_debug.last_tx_free_level == 0u) ||
+                ((gm6020_debug.last_can_error_code & HAL_CAN_ERROR_PARAM) != 0u))
+            {
+                GM6020_AbortStaleTx(hcan);
+            }
             break;
         }
+        gm6020_debug.tx_success_count++;
+        gm6020_debug.last_tx_mailbox = tx_mailbox;
+        GM6020_DebugUpdateCanState(hcan);
     }
 }
 

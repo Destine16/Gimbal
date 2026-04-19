@@ -13,8 +13,7 @@ from dataclasses import dataclass
 import pyqtgraph as pg
 import serial
 from serial.tools import list_ports
-from PySide6.QtCore import QTimer, Qt
-from PySide6.QtGui import QKeySequence, QShortcut
+from PySide6.QtCore import QEvent, QTimer, Qt
 from PySide6.QtWidgets import (
     QApplication,
     QCheckBox,
@@ -330,6 +329,7 @@ class MainWindow(QMainWindow):
         self.setWindowTitle("Vision Jog GUI")
         self.worker: SerialLinkWorker | None = None
         self.state = LinkState()
+        self.last_key_action = "-"
 
         self.port_combo = QComboBox()
         self.refresh_btn = QPushButton("Refresh")
@@ -366,9 +366,11 @@ class MainWindow(QMainWindow):
         self.sent_count_label = QLabel("0")
         self.recv_count_label = QLabel("0")
         self.tx_delta_label = QLabel("yaw=0, pitch=0")
+        self.target_offset_label = QLabel("yaw=0, pitch=0")
         self.actual_label = QLabel("yaw=-, pitch=-")
         self.last_rx_delta_label = QLabel("yaw=-, pitch=-")
         self.base_label = QLabel("yaw=-, pitch=-")
+        self.last_key_label = QLabel("-")
         self.last_tx_frame_label = QLabel("-")
         self.last_rx_frame_label = QLabel("-")
         self.error_label = QLabel("-")
@@ -394,7 +396,7 @@ class MainWindow(QMainWindow):
 
         self._build_ui()
         self._connect_signals()
-        self._setup_shortcuts()
+        QApplication.instance().installEventFilter(self)
         self._refresh_ports(default_port)
 
     @staticmethod
@@ -436,9 +438,11 @@ class MainWindow(QMainWindow):
         status_form.addRow("Sent frames", self.sent_count_label)
         status_form.addRow("Received frames", self.recv_count_label)
         status_form.addRow("Current delta", self.tx_delta_label)
+        status_form.addRow("Target offset", self.target_offset_label)
         status_form.addRow("Actual angle", self.actual_label)
         status_form.addRow("Last RX delta", self.last_rx_delta_label)
         status_form.addRow("Startup zero", self.base_label)
+        status_form.addRow("Last key", self.last_key_label)
         status_form.addRow("Last TX", self.last_tx_frame_label)
         status_form.addRow("Last RX", self.last_rx_frame_label)
         status_form.addRow("Last error", self.error_label)
@@ -472,18 +476,41 @@ class MainWindow(QMainWindow):
         self.pitch_axis.btn_pos.clicked.connect(lambda: self.pitch_axis.step_add(self.step_spin.value()))
         self.pitch_axis.btn_zero.clicked.connect(lambda: self.pitch_axis.set_value(0))
 
-    def _setup_shortcuts(self) -> None:
-        shortcuts = {
-            "A": lambda: self.yaw_axis.step_add(self.step_spin.value()),
-            "D": lambda: self.yaw_axis.step_add(-self.step_spin.value()),
-            "W": lambda: self.pitch_axis.step_add(self.step_spin.value()),
-            "S": lambda: self.pitch_axis.step_add(-self.step_spin.value()),
-            "Z": self._zero_target,
-            "P": self._toggle_send,
-        }
-        for key, callback in shortcuts.items():
-            sc = QShortcut(QKeySequence(key), self)
-            sc.activated.connect(callback)
+    def eventFilter(self, obj, event) -> bool:  # type: ignore[override]
+        if event.type() != QEvent.Type.KeyPress or not self.isActiveWindow():
+            return super().eventFilter(obj, event)
+
+        if self._handle_key(event.key()):
+            event.accept()
+            return True
+        return super().eventFilter(obj, event)
+
+    def _handle_key(self, key: int) -> bool:
+        step = self.step_spin.value()
+        if key == Qt.Key.Key_A:
+            self.yaw_axis.step_add(step)
+            self.last_key_action = f"A: yaw left +{step}"
+        elif key == Qt.Key.Key_D:
+            self.yaw_axis.step_add(-step)
+            self.last_key_action = f"D: yaw right -{step}"
+        elif key == Qt.Key.Key_W:
+            self.pitch_axis.step_add(step)
+            self.last_key_action = f"W: pitch up +{step}"
+        elif key == Qt.Key.Key_S:
+            self.pitch_axis.step_add(-step)
+            self.last_key_action = f"S: pitch down -{step}"
+        elif key == Qt.Key.Key_Z:
+            self._zero_target()
+            self.last_key_action = "Z: zero target"
+        elif key == Qt.Key.Key_P:
+            self._toggle_send()
+            self.last_key_action = "P: toggle sending"
+        else:
+            return False
+
+        self.last_key_label.setText(self.last_key_action)
+        self._update_target_offset_label()
+        return True
 
     def _refresh_ports(self, preferred: str | None = None) -> None:
         ports = list_serial_ports()
@@ -533,6 +560,7 @@ class MainWindow(QMainWindow):
     def _zero_target(self) -> None:
         self.yaw_axis.set_value(0)
         self.pitch_axis.set_value(0)
+        self._update_target_offset_label()
         self._update_labels(0, 0)
 
     def _reset_history(self) -> None:
@@ -594,6 +622,14 @@ class MainWindow(QMainWindow):
         self._append_plot_point()
         self._update_labels(yaw_delta, pitch_delta)
 
+    def _update_target_offset_label(self) -> None:
+        yaw_offset = self.yaw_axis.value()
+        pitch_offset = self.pitch_axis.value()
+        self.target_offset_label.setText(
+            f"yaw={yaw_offset:+d} ({yaw_offset / 10000.0:+.4f} rad), "
+            f"pitch={pitch_offset:+d} ({pitch_offset / 10000.0:+.4f} rad)"
+        )
+
     def _append_plot_point(self) -> None:
         now = time.monotonic()
         yaw_target_offset = self.yaw_axis.value() / 10000.0
@@ -625,6 +661,8 @@ class MainWindow(QMainWindow):
         self.last_tx_frame_label.setText(self.state.last_tx_frame_hex)
         self.last_rx_frame_label.setText(self.state.last_rx_frame_hex)
         self.error_label.setText(self.state.last_error)
+        self._update_target_offset_label()
+        self.last_key_label.setText(self.last_key_action)
         self.tx_delta_label.setText(
             f"yaw={yaw_delta:+d} ({yaw_delta / 10000.0:+.4f} rad), "
             f"pitch={pitch_delta:+d} ({pitch_delta / 10000.0:+.4f} rad)"

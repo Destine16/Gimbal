@@ -29,10 +29,12 @@ project(${CMAKE_PROJECT_NAME})
 message("Build type: " ${CMAKE_BUILD_TYPE})
 
 option(IMU_ONLY_BRINGUP_ENABLE "Bring up only IMU-related tasks and skip robot/motor init" OFF)
-option(GIMBAL_AUTO_YAW_STEP_TEST_ENABLE "Enable temporary automatic yaw step test sequence" OFF)
 option(GIMBAL_YAW_ONLY_TEST_ENABLE "Enable temporary yaw-only gimbal test mode" OFF)
-option(GIMBAL_AUTO_PITCH_STEP_TEST_ENABLE "Enable temporary automatic pitch step test sequence" OFF)
 option(GIMBAL_PITCH_ONLY_TEST_ENABLE "Enable temporary pitch-only gimbal test mode" OFF)
+set(VISION_CONTROL_MODE "1" CACHE STRING "Vision control mode: 0=continuous delta, 1=event delta to held target")
+set_property(CACHE VISION_CONTROL_MODE PROPERTY STRINGS 0 1)
+set(GIMBAL_SYSID_MODE "0" CACHE STRING "Gimbal system identification mode: 0=off, 1=yaw PRBS, 2=pitch feedforward, 3=yaw step, 4=pitch hysteresis")
+set_property(CACHE GIMBAL_SYSID_MODE PROPERTY STRINGS 0 1 2 3 4)
 
 # Enable CMake support for ASM and C languages
 enable_language(C ASM)
@@ -55,7 +57,10 @@ target_sources(${CMAKE_PROJECT_NAME} PRIVATE
     Application/cmd/robot_cmd.c
     Application/gimbal/gimbal.c
     Application/gimbal/gimbal_params.c
+    Application/sysid/gimbal_sysid.c
+    Application/sysid/gimbal_sysid_telemetry.c
     Modules/bsp/bsp_dwt.c
+    Modules/debug/sysid_rtt.c
     Modules/message_center/message_center.c
     Modules/daemon/daemon.c
     Modules/algorithm/controller.c
@@ -78,8 +83,10 @@ target_include_directories(${CMAKE_PROJECT_NAME} PRIVATE
     Application
     Application/cmd
     Application/gimbal
+    Application/sysid
     Modules
     Modules/bsp
+    Modules/debug
     Modules/message_center
     Modules/daemon
     Modules/algorithm
@@ -92,7 +99,19 @@ target_include_directories(${CMAKE_PROJECT_NAME} PRIVATE
 # Add project symbols (macros)
 target_compile_definitions(${CMAKE_PROJECT_NAME} PRIVATE
     # Add user defined symbols
+    VISION_CONTROL_MODE=${VISION_CONTROL_MODE}
+    GIMBAL_SYSID_MODE=${GIMBAL_SYSID_MODE}
 )
+
+if(NOT GIMBAL_SYSID_MODE STREQUAL "0")
+    target_sources(${CMAKE_PROJECT_NAME} PRIVATE
+        /home/skyvector/basic_framework/Middlewares/Third_Party/SEGGER/RTT/SEGGER_RTT.c
+    )
+    target_include_directories(${CMAKE_PROJECT_NAME} PRIVATE
+        /home/skyvector/basic_framework/Middlewares/Third_Party/SEGGER/RTT
+        /home/skyvector/basic_framework/Middlewares/Third_Party/SEGGER/Config
+    )
+endif()
 
 if(IMU_ONLY_BRINGUP_ENABLE)
     target_compile_definitions(${CMAKE_PROJECT_NAME} PRIVATE IMU_ONLY_BRINGUP_ENABLE=1)
@@ -100,22 +119,10 @@ else()
     target_compile_definitions(${CMAKE_PROJECT_NAME} PRIVATE IMU_ONLY_BRINGUP_ENABLE=0)
 endif()
 
-if(GIMBAL_AUTO_YAW_STEP_TEST_ENABLE)
-    target_compile_definitions(${CMAKE_PROJECT_NAME} PRIVATE GIMBAL_AUTO_YAW_STEP_TEST_ENABLE=1)
-else()
-    target_compile_definitions(${CMAKE_PROJECT_NAME} PRIVATE GIMBAL_AUTO_YAW_STEP_TEST_ENABLE=0)
-endif()
-
 if(GIMBAL_YAW_ONLY_TEST_ENABLE)
     target_compile_definitions(${CMAKE_PROJECT_NAME} PRIVATE GIMBAL_YAW_ONLY_TEST_ENABLE=1)
 else()
     target_compile_definitions(${CMAKE_PROJECT_NAME} PRIVATE GIMBAL_YAW_ONLY_TEST_ENABLE=0)
-endif()
-
-if(GIMBAL_AUTO_PITCH_STEP_TEST_ENABLE)
-    target_compile_definitions(${CMAKE_PROJECT_NAME} PRIVATE GIMBAL_AUTO_PITCH_STEP_TEST_ENABLE=1)
-else()
-    target_compile_definitions(${CMAKE_PROJECT_NAME} PRIVATE GIMBAL_AUTO_PITCH_STEP_TEST_ENABLE=0)
 endif()
 
 if(GIMBAL_PITCH_ONLY_TEST_ENABLE)

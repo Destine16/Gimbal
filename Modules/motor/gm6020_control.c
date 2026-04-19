@@ -2,6 +2,8 @@
 
 #include <math.h>
 
+#define GM6020_OUTPUT_FF_HYST_SPEED_REF_DEADBAND_RAD_S 0.10f
+
 static void GM6020_ResetPIDState(PIDInstance *pid)
 {
     if (pid == NULL)
@@ -55,6 +57,7 @@ void GM6020_ResetControlState(GM6020_Instance *motor)
     GM6020_ResetPIDState(&motor->angle_pid);
     GM6020_ResetPIDState(&motor->speed_pid);
     GM6020_ResetPIDState(&motor->current_pid);
+    motor->output_ff_motion_sign = 0.0f;
 }
 
 // 逐个电机更新三环输出,发送动作由 CAN 层统一完成
@@ -77,12 +80,20 @@ static void GM6020_ControlStep(GM6020_Instance *motor, uint32_t now_tick)
     if (!motor->enabled)
     {
         motor->output_cmd = 0;
+        motor->speed_ref_rad_s = 0.0f;
+        motor->current_ref_raw = 0.0f;
+        motor->voltage_ref_raw = 0.0f;
+        motor->output_ff_raw = 0.0f;
         return;
     }
 
     if (!GM6020_RuntimeOnline(motor, now_tick))
     {
         motor->output_cmd = 0;
+        motor->speed_ref_rad_s = 0.0f;
+        motor->current_ref_raw = 0.0f;
+        motor->voltage_ref_raw = 0.0f;
+        motor->output_ff_raw = 0.0f;
         GM6020_ResetControlState(motor);
         return;
     }
@@ -94,7 +105,25 @@ static void GM6020_ControlStep(GM6020_Instance *motor, uint32_t now_tick)
     speed_ref = PIDCalculate(&motor->angle_pid, angle_feedback, angle_ref);
     current_ref = PIDCalculate(&motor->speed_pid, speed_feedback, speed_ref);
     voltage_ref = PIDCalculate(&motor->current_pid, current_feedback, current_ref);
-    output_ff_raw = motor->output_ff_sin_raw * sinf(angle_feedback) + motor->output_ff_offset_raw;
+    if (speed_ref > GM6020_OUTPUT_FF_HYST_SPEED_REF_DEADBAND_RAD_S)
+    {
+        motor->output_ff_motion_sign = 1.0f;
+    }
+    else if (speed_ref < -GM6020_OUTPUT_FF_HYST_SPEED_REF_DEADBAND_RAD_S)
+    {
+        motor->output_ff_motion_sign = -1.0f;
+    }
+    output_ff_raw = motor->output_ff_sin_raw * sinf(angle_feedback) +
+                    motor->output_ff_offset_raw +
+                    motor->output_ff_hyst_raw * motor->output_ff_motion_sign;
+
+    motor->angle_feedback_rad = angle_feedback;
+    motor->speed_ref_rad_s = speed_ref;
+    motor->speed_feedback_rad_s = speed_feedback;
+    motor->current_ref_raw = current_ref;
+    motor->current_feedback_raw = current_feedback;
+    motor->voltage_ref_raw = voltage_ref;
+    motor->output_ff_raw = output_ff_raw;
 
     motor->output_cmd = GM6020_OutputClamp(motor->output_sign * voltage_ref + output_ff_raw,
                                            motor->max_output_raw);

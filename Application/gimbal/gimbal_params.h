@@ -17,6 +17,7 @@ typedef struct
     float max_angle_rad;
     float output_ff_sin_raw;
     float output_ff_offset_raw;
+    float output_ff_hyst_raw;
     PID_Init_Config_s angle_pid;
     PID_Init_Config_s speed_pid;
     PID_Init_Config_s current_pid;

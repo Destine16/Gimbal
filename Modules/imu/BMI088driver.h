@@ -38,11 +38,11 @@
 #define BMI088_GYRO_250_SEN 0.00013315805450396191230191732547673f
 #define BMI088_GYRO_125_SEN 0.000066579027251980956150958662738366f
 
-// 默认离线标定参数；当前工程优先使用在线静态标定
-#define GxOFFSET 0.0f
-#define GyOFFSET 0.0f
-#define GzOFFSET 0.0f
-#define gNORM 9.81f
+// 默认离线标定参数；来自 static_20260408_final.csv 的静止数据统计
+#define GxOFFSET 0.001531594f
+#define GyOFFSET (-0.003526633f)
+#define GzOFFSET 0.003797952f
+#define gNORM 9.791718f
 
 /* IMU数据结构体 */
 typedef struct
@@ -105,13 +105,12 @@ enum
 extern IMU_Data_t BMI088;
 
 /**
- * @brief 初始化BMI088,传入连接的SPI总线handle,以及是否进行在线标定
- * 
+ * @brief 初始化BMI088,并加载默认离线标定参数
+ *
  * @param bmi088_SPI handle
- * @param calibrate  1为进行在线标定,0使用离线数据
  * @return BMI088_Error_t 成功则返回 BMI088_NO_ERROR
  */
-extern BMI088_Error_t BMI088Init(SPI_HandleTypeDef *bmi088_SPI, uint8_t calibrate);
+extern BMI088_Error_t BMI088Init(SPI_HandleTypeDef *bmi088_SPI);
 
 /**
  * @brief 加速计初始化

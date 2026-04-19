@@ -94,12 +94,31 @@ typedef struct __attribute__((packed)) {
 
 ### 电控侧解释方式
 
-当前固件把 `delta_yaw_1e4rad` 和 `delta_pitch_1e4rad` 当作增量角：
+当前固件默认使用事件目标模式：
+
+- 每收到 1 帧合法视觉命令，只消费 1 次 `delta_yaw_1e4rad` 和 `delta_pitch_1e4rad`
+- 电控在收到该帧的时刻，把 delta 换算成新的绝对目标
+- 新目标会一直保持，直到下一帧合法视觉命令到来
+- 因此视觉不需要高频连续发送；识别频率较慢时也可以正常使用
+
+换算关系：
 
 ```text
 yaw_target   = current_yaw   + delta_yaw
 pitch_target = current_pitch + delta_pitch
 ```
+
+如果视觉没有发送新帧，电控继续保持上一次生成的 `yaw_target` / `pitch_target`，不会反复累加旧 delta。
+
+模式开关：
+
+- `VISION_CONTROL_MODE=1`：事件目标模式，默认值，适配慢速视觉
+- `VISION_CONTROL_MODE=0`：连续 delta 模式，适合高频连续发送同一时刻的视觉误差
+
+当前开关位置：
+
+- `Application/robot_def.h`
+- `CMakeLists.txt`
 
 对应代码位置：
 
@@ -151,7 +170,8 @@ typedef struct __attribute__((packed)) {
 ## 错误处理
 
 - CRC 错误：丢弃整帧
-- 命令超时：最新视觉命令失效
+- 事件目标模式下，命令超时只作为在线状态诊断；已经生成的云台目标不会因为视觉暂时没发新帧而清零
+- 连续 delta 模式下，命令超时会让最新视觉命令失效
 
 当前超时逻辑在：
 

@@ -1,7 +1,7 @@
 #include "bmi088_internal.h"
 
 IMU_Data_t BMI088;
-// BMI088 模块内部统一上下文: 换算系数、标定观测量、异步状态机和 DMA 缓冲都收进这里
+// BMI088 模块内部统一上下文: 换算系数、零偏补偿开关、异步状态机和 DMA 缓冲都收进这里
 BMI088_Context_t bmi088_ctx = {
     .accel_sen = BMI088_ACCEL_6G_SEN,
     .gyro_sen = BMI088_GYRO_2000_SEN,

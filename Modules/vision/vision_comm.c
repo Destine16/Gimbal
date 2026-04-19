@@ -16,6 +16,8 @@
 #define VISION_STATUS_SOF2            0xA5u
 #define VISION_STATUS_FRAME_LEN       16u
 #define VISION_STATUS_CRC_INPUT_LEN   14u
+#define VISION_1E4RAD_TO_RAD          0.0001f
+#define VISION_RAD_TO_DEG             57.29577951f
 
 typedef enum
 {
@@ -36,9 +38,20 @@ static VisionCmd_t latest_vision_cmd;
 static VisionStatus_t latest_vision_status;
 static uint32_t latest_status_tx_tick;
 static uint8_t latest_cmd_valid;
+static uint8_t latest_cmd_pending;
 static uint8_t usb_host_ready;
 static uint8_t vision_status_frame[VISION_STATUS_FRAME_LEN];
 static DaemonInstance *vision_daemon_instance; // 视觉命令在线监测
+
+volatile VisionDebug_t vision_debug;
+
+static void VisionComm_DebugCopyBytes(volatile uint8_t *dst, const uint8_t *src, uint8_t len)
+{
+    for (uint8_t i = 0u; i < len; ++i)
+    {
+        dst[i] = src[i];
+    }
+}
 
 static uint16_t VisionComm_DaemonReloadCount(void)
 {
@@ -56,6 +69,20 @@ static void VisionComm_HandleFrame(const uint8_t frame[VISION_CMD_FRAME_LEN])
 {
     memcpy(&latest_vision_cmd, &frame[2], sizeof(VisionCmd_t));
     latest_cmd_valid = 1u;
+    latest_cmd_pending = 1u;
+    vision_debug.valid_frame_count++;
+    vision_debug.last_valid_tick_ms = HAL_GetTick();
+    vision_debug.last_delta_yaw_1e4rad = latest_vision_cmd.delta_yaw_1e4rad;
+    vision_debug.last_delta_pitch_1e4rad = latest_vision_cmd.delta_pitch_1e4rad;
+    vision_debug.last_delta_yaw_rad =
+        VISION_1E4RAD_TO_RAD * (float)latest_vision_cmd.delta_yaw_1e4rad;
+    vision_debug.last_delta_pitch_rad =
+        VISION_1E4RAD_TO_RAD * (float)latest_vision_cmd.delta_pitch_1e4rad;
+    vision_debug.last_delta_yaw_deg = VISION_RAD_TO_DEG * vision_debug.last_delta_yaw_rad;
+    vision_debug.last_delta_pitch_deg = VISION_RAD_TO_DEG * vision_debug.last_delta_pitch_rad;
+    vision_debug.latest_cmd_valid = latest_cmd_valid;
+    vision_debug.latest_cmd_pending = latest_cmd_pending;
+    VisionComm_DebugCopyBytes(vision_debug.last_valid_frame, frame, VISION_CMD_FRAME_LEN);
     // 收到一帧合法视觉命令即认为视觉链路仍在线
     DaemonReload(vision_daemon_instance);
 }
@@ -117,9 +144,18 @@ static void VisionComm_ParseByte(uint8_t byte)
             calc_crc = crc_modbus(vision_rx_parser.frame, VISION_CMD_CRC_INPUT_LEN);
             recv_crc = (uint16_t)vision_rx_parser.frame[6] |
                        ((uint16_t)vision_rx_parser.frame[7] << 8);
+            vision_debug.last_calc_crc = calc_crc;
+            vision_debug.last_recv_crc = recv_crc;
+            VisionComm_DebugCopyBytes(vision_debug.last_candidate_frame,
+                                      vision_rx_parser.frame,
+                                      VISION_CMD_FRAME_LEN);
             if (calc_crc == recv_crc)
             {
                 VisionComm_HandleFrame(vision_rx_parser.frame);
+            }
+            else
+            {
+                vision_debug.crc_error_count++;
             }
             VisionComm_ResetParser();
         }
@@ -137,7 +173,9 @@ void VisionComm_Init(void)
     memset(&latest_vision_status, 0, sizeof(latest_vision_status));
     latest_status_tx_tick = 0u;
     latest_cmd_valid = 0u;
+    latest_cmd_pending = 0u;
     usb_host_ready = 0u;
+    memset((void *)&vision_debug, 0, sizeof(vision_debug));
     if (vision_daemon_instance == NULL)
     {
         vision_daemon_instance = DaemonRegister(&(Daemon_Init_Config_s){
@@ -171,6 +209,13 @@ void VisionComm_Task(void)
 void VisionComm_RxBytes(const uint8_t *data, uint16_t len)
 {
     usb_host_ready = 1u;
+    vision_debug.usb_rx_packet_count++;
+    vision_debug.usb_rx_byte_count += len;
+    vision_debug.last_rx_tick_ms = HAL_GetTick();
+    vision_debug.last_usb_packet_len = (uint8_t)((len > VISION_CMD_FRAME_LEN) ? VISION_CMD_FRAME_LEN : len);
+    VisionComm_DebugCopyBytes(vision_debug.last_usb_packet_bytes,
+                              data,
+                              vision_debug.last_usb_packet_len);
     for (uint16_t i = 0; i < len; ++i)
     {
         VisionComm_ParseByte(data[i]);
@@ -179,6 +224,17 @@ void VisionComm_RxBytes(const uint8_t *data, uint16_t len)
 
 uint8_t VisionComm_GetVisionCmd(VisionCmd_t *cmd)
 {
+#if VISION_CONTROL_MODE == VISION_CONTROL_EVENT_TARGET
+    if (!latest_cmd_pending)
+    {
+        return 0u;
+    }
+
+    memcpy(cmd, &latest_vision_cmd, sizeof(VisionCmd_t));
+    latest_cmd_pending = 0u;
+    vision_debug.latest_cmd_pending = latest_cmd_pending;
+    return 1u;
+#else
     if (!latest_cmd_valid || !VisionComm_IsOnline())
     {
         return 0u;
@@ -186,15 +242,24 @@ uint8_t VisionComm_GetVisionCmd(VisionCmd_t *cmd)
 
     memcpy(cmd, &latest_vision_cmd, sizeof(VisionCmd_t));
     return 1u;
+#endif
 }
 
 void VisionComm_UpdateStatus(const VisionStatus_t *status)
 {
     memcpy(&latest_vision_status, status, sizeof(latest_vision_status));
+    vision_debug.actual_yaw_1e4rad = status->yaw_actual_1e4rad;
+    vision_debug.actual_pitch_1e4rad = status->pitch_actual_1e4rad;
+    vision_debug.actual_yaw_rad = VISION_1E4RAD_TO_RAD * (float)status->yaw_actual_1e4rad;
+    vision_debug.actual_pitch_rad = VISION_1E4RAD_TO_RAD * (float)status->pitch_actual_1e4rad;
+    vision_debug.actual_yaw_deg = VISION_RAD_TO_DEG * vision_debug.actual_yaw_rad;
+    vision_debug.actual_pitch_deg = VISION_RAD_TO_DEG * vision_debug.actual_pitch_rad;
 }
 
 uint8_t VisionComm_IsOnline(void)
 {
+    vision_debug.latest_cmd_valid = latest_cmd_valid;
+    vision_debug.latest_cmd_pending = latest_cmd_pending;
     return (uint8_t)(latest_cmd_valid && DaemonIsOnline(vision_daemon_instance));
 }
 
