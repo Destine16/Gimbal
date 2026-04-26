@@ -10,12 +10,12 @@
 
 #define VISION_CMD_SOF1               0xA5u
 #define VISION_CMD_SOF2               0x5Au
-#define VISION_CMD_FRAME_LEN           8u
-#define VISION_CMD_CRC_INPUT_LEN       6u
+#define VISION_CMD_FRAME_LEN           10u
+#define VISION_CMD_CRC_INPUT_LEN       8u
 #define VISION_STATUS_SOF1            0x5Au
 #define VISION_STATUS_SOF2            0xA5u
-#define VISION_STATUS_FRAME_LEN       16u
-#define VISION_STATUS_CRC_INPUT_LEN   14u
+#define VISION_STATUS_FRAME_LEN       13u
+#define VISION_STATUS_CRC_INPUT_LEN   11u
 #define VISION_1E4RAD_TO_RAD          0.0001f
 #define VISION_RAD_TO_DEG             57.29577951f
 
@@ -39,6 +39,7 @@ static VisionStatus_t latest_vision_status;
 static uint32_t latest_status_tx_tick;
 static uint8_t latest_cmd_valid;
 static uint8_t latest_cmd_pending;
+static uint8_t latest_cmd_seq_echo;
 static uint8_t usb_host_ready;
 static uint8_t vision_status_frame[VISION_STATUS_FRAME_LEN];
 static DaemonInstance *vision_daemon_instance; // 视觉命令在线监测
@@ -59,6 +60,22 @@ static uint16_t VisionComm_DaemonReloadCount(void)
     return (uint16_t)((count == 0u) ? 1u : count);
 }
 
+static int16_t VisionComm_GetI16Le(const uint8_t *data)
+{
+    uint16_t value = (uint16_t)data[0] | ((uint16_t)data[1] << 8);
+    return (int16_t)value;
+}
+
+static void VisionComm_PutI32Le(uint8_t *data, int32_t value)
+{
+    uint32_t raw = (uint32_t)value;
+
+    data[0] = (uint8_t)(raw & 0x000000FFu);
+    data[1] = (uint8_t)((raw >> 8) & 0x000000FFu);
+    data[2] = (uint8_t)((raw >> 16) & 0x000000FFu);
+    data[3] = (uint8_t)((raw >> 24) & 0x000000FFu);
+}
+
 static void VisionComm_ResetParser(void)
 {
     memset(&vision_rx_parser, 0, sizeof(vision_rx_parser));
@@ -67,11 +84,16 @@ static void VisionComm_ResetParser(void)
 
 static void VisionComm_HandleFrame(const uint8_t frame[VISION_CMD_FRAME_LEN])
 {
-    memcpy(&latest_vision_cmd, &frame[2], sizeof(VisionCmd_t));
+    latest_vision_cmd.seq = frame[2];
+    latest_vision_cmd.target_valid = (frame[3] != 0u) ? 1u : 0u;
+    latest_vision_cmd.delta_yaw_1e4rad = VisionComm_GetI16Le(&frame[4]);
+    latest_vision_cmd.delta_pitch_1e4rad = VisionComm_GetI16Le(&frame[6]);
     latest_cmd_valid = 1u;
     latest_cmd_pending = 1u;
     vision_debug.valid_frame_count++;
     vision_debug.last_valid_tick_ms = HAL_GetTick();
+    vision_debug.last_seq = latest_vision_cmd.seq;
+    vision_debug.last_target_valid = latest_vision_cmd.target_valid;
     vision_debug.last_delta_yaw_1e4rad = latest_vision_cmd.delta_yaw_1e4rad;
     vision_debug.last_delta_pitch_1e4rad = latest_vision_cmd.delta_pitch_1e4rad;
     vision_debug.last_delta_yaw_rad =
@@ -90,17 +112,16 @@ static void VisionComm_HandleFrame(const uint8_t frame[VISION_CMD_FRAME_LEN])
 static uint8_t VisionComm_TxStatusFrame(void)
 {
     uint16_t crc;
-    VisionStatus_t status_frame_data = latest_vision_status;
-
-    status_frame_data.last_rx_delta_yaw_1e4rad = latest_vision_cmd.delta_yaw_1e4rad;
-    status_frame_data.last_rx_delta_pitch_1e4rad = latest_vision_cmd.delta_pitch_1e4rad;
 
     vision_status_frame[0] = VISION_STATUS_SOF1;
     vision_status_frame[1] = VISION_STATUS_SOF2;
-    memcpy(&vision_status_frame[2], &status_frame_data, sizeof(status_frame_data));
+    vision_status_frame[2] = latest_cmd_seq_echo;
+    VisionComm_PutI32Le(&vision_status_frame[3], latest_vision_status.yaw_actual_1e4rad);
+    VisionComm_PutI32Le(&vision_status_frame[7], latest_vision_status.pitch_actual_1e4rad);
     crc = crc_modbus(vision_status_frame, VISION_STATUS_CRC_INPUT_LEN);
-    vision_status_frame[14] = (uint8_t)(crc & 0x00FFu);
-    vision_status_frame[15] = (uint8_t)((crc >> 8) & 0x00FFu);
+    vision_status_frame[11] = (uint8_t)(crc & 0x00FFu);
+    vision_status_frame[12] = (uint8_t)((crc >> 8) & 0x00FFu);
+    vision_debug.seq_echo = latest_cmd_seq_echo;
     return CDC_Transmit_FS(vision_status_frame, VISION_STATUS_FRAME_LEN);
 }
 
@@ -142,8 +163,8 @@ static void VisionComm_ParseByte(uint8_t byte)
         if (vision_rx_parser.index >= VISION_CMD_FRAME_LEN)
         {
             calc_crc = crc_modbus(vision_rx_parser.frame, VISION_CMD_CRC_INPUT_LEN);
-            recv_crc = (uint16_t)vision_rx_parser.frame[6] |
-                       ((uint16_t)vision_rx_parser.frame[7] << 8);
+            recv_crc = (uint16_t)vision_rx_parser.frame[8] |
+                       ((uint16_t)vision_rx_parser.frame[9] << 8);
             vision_debug.last_calc_crc = calc_crc;
             vision_debug.last_recv_crc = recv_crc;
             VisionComm_DebugCopyBytes(vision_debug.last_candidate_frame,
@@ -174,6 +195,7 @@ void VisionComm_Init(void)
     latest_status_tx_tick = 0u;
     latest_cmd_valid = 0u;
     latest_cmd_pending = 0u;
+    latest_cmd_seq_echo = 0u;
     usb_host_ready = 0u;
     memset((void *)&vision_debug, 0, sizeof(vision_debug));
     if (vision_daemon_instance == NULL)
@@ -232,6 +254,8 @@ uint8_t VisionComm_GetVisionCmd(VisionCmd_t *cmd)
 
     memcpy(cmd, &latest_vision_cmd, sizeof(VisionCmd_t));
     latest_cmd_pending = 0u;
+    latest_cmd_seq_echo = latest_vision_cmd.seq;
+    vision_debug.seq_echo = latest_cmd_seq_echo;
     vision_debug.latest_cmd_pending = latest_cmd_pending;
     return 1u;
 #else
@@ -241,6 +265,8 @@ uint8_t VisionComm_GetVisionCmd(VisionCmd_t *cmd)
     }
 
     memcpy(cmd, &latest_vision_cmd, sizeof(VisionCmd_t));
+    latest_cmd_seq_echo = latest_vision_cmd.seq;
+    vision_debug.seq_echo = latest_cmd_seq_echo;
     return 1u;
 #endif
 }

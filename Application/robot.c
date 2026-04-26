@@ -2,6 +2,7 @@
 
 #include "gimbal.h"
 #include "robot_cmd.h"
+#include "vision_debug_rtt.h"
 
 void RobotInit(void)
 {
@@ -10,10 +11,12 @@ void RobotInit(void)
     // gimbal -> gimbal_feed -> robot_cmd
     GimbalInit();
     RobotCMDInit();
+    VisionDebugRtt_Init();
 }
 
 void RobotTask(void)
 {
     RobotCMDTask();
     GimbalTask();
+    VisionDebugRtt_Task();
 }

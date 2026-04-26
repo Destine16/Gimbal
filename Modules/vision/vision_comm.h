@@ -3,18 +3,18 @@
 
 #include <stdint.h>
 
-typedef struct __attribute__((packed))
+typedef struct
 {
+    uint8_t seq;
+    uint8_t target_valid;
     int16_t delta_yaw_1e4rad;
     int16_t delta_pitch_1e4rad;
 } VisionCmd_t;
 
-typedef struct __attribute__((packed))
+typedef struct
 {
     int32_t yaw_actual_1e4rad;
     int32_t pitch_actual_1e4rad;
-    int16_t last_rx_delta_yaw_1e4rad;
-    int16_t last_rx_delta_pitch_1e4rad;
 } VisionStatus_t;
 
 typedef struct
@@ -27,6 +27,9 @@ typedef struct
     uint32_t last_valid_tick_ms;
     uint16_t last_calc_crc;
     uint16_t last_recv_crc;
+    uint8_t last_seq;
+    uint8_t seq_echo;
+    uint8_t last_target_valid;
     int16_t last_delta_yaw_1e4rad;
     int16_t last_delta_pitch_1e4rad;
     float last_delta_yaw_rad;
@@ -40,9 +43,9 @@ typedef struct
     float actual_yaw_deg;
     float actual_pitch_deg;
     uint8_t last_usb_packet_len;
-    uint8_t last_usb_packet_bytes[8];
-    uint8_t last_candidate_frame[8];
-    uint8_t last_valid_frame[8];
+    uint8_t last_usb_packet_bytes[10];
+    uint8_t last_candidate_frame[10];
+    uint8_t last_valid_frame[10];
     uint8_t latest_cmd_valid;
     uint8_t latest_cmd_pending;
 } VisionDebug_t;

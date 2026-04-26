@@ -2,177 +2,227 @@
 
 ## 适用范围
 
-这份协议面向当前项目的单视觉、单电控、单云台场景。
+这份协议面向当前项目的单视觉、单电控、双轴云台场景。
 
 - 视觉主机：1 个
 - 下位机控制器：1 个
-- 双轴云台：1 套
 - 传输链路：USB CDC
+- 数据格式：固定长度二进制帧
+- 字节序：小端序
+- 校验：CRC16/MODBUS
 
-协议只包含当前云台自瞄所需字段。
+## 视觉到电控
 
-## 设计目标
+视觉发给电控的是增量角，不是绝对角。
 
-- 视觉向电控发送最小必要控制量
-- 当前只保留 `delta_yaw` 和 `delta_pitch`
-- 不直接传 `float`
-- 帧结构固定长度，方便 STM32 直接解析
-
-## 下行命令帧
-
-视觉主机发给电控的命令帧格式如下：
+固定 10 字节：
 
 ```text
-SOF1 | SOF2 | delta_yaw | delta_pitch | CRC16
+Byte0   Byte1   Byte2   Byte3          Byte4~5      Byte6~7        Byte8~9
+SOF1    SOF2    seq     target_valid   delta_yaw    delta_pitch    CRC16
 ```
 
-字段说明：
+字段定义：
 
-- `SOF1`：`0xA5`
-- `SOF2`：`0x5A`
+- `SOF1 = 0xA5`
+- `SOF2 = 0x5A`
+- `seq`：`uint8_t`，帧序号，每发一帧递增，`0~255` 循环
+- `target_valid`：`uint8_t`，`1` 表示当前有目标，`0` 表示当前无目标
 - `delta_yaw`：`int16_t`，单位 `0.0001 rad`
 - `delta_pitch`：`int16_t`，单位 `0.0001 rad`
-- `CRC16`：CRC16/MODBUS，低字节在前
+- `CRC16`：`uint16_t`，CRC16/MODBUS，低字节在前
 
-固定总帧长：`8 byte`
-
-## 上行状态帧
-
-电控回传给上位机的状态帧格式如下：
-
-```text
-SOF1 | SOF2 | yaw_actual | pitch_actual | last_rx_delta_yaw | last_rx_delta_pitch | CRC16
-```
-
-字段说明：
-
-- `SOF1`：`0x5A`
-- `SOF2`：`0xA5`
-- `yaw_actual`：`int32_t`，单位 `0.0001 rad`
-- `pitch_actual`：`int32_t`，单位 `0.0001 rad`
-- `last_rx_delta_yaw`：`int16_t`，单位 `0.0001 rad`
-- `last_rx_delta_pitch`：`int16_t`，单位 `0.0001 rad`
-- `CRC16`：CRC16/MODBUS，低字节在前
-
-固定总帧长：`16 byte`
-
-## CRC16 规则
-
-- 类型：`CRC16/MODBUS`
-- 初值：`0xFFFF`
-- 多项式：`0xA001`
-- 计算范围：
-  - 从 `SOF1` 开始
-  - 到 `delta_pitch` 结束
-  - 包含 `SOF1`
-  - 包含 `SOF2`
-  - 不包含 CRC 自身
-
-## VisionCmd
-
-### 作用
-
-视觉把当前目标对应的 yaw / pitch 增量发送给下位机。
-
-### 数据结构
+协议结构体示例：
 
 ```c
-typedef struct __attribute__((packed)) {
+typedef struct __attribute__((packed))
+{
+    uint8_t sof1;
+    uint8_t sof2;
+    uint8_t seq;
+    uint8_t target_valid;
     int16_t delta_yaw_1e4rad;
     int16_t delta_pitch_1e4rad;
-} VisionCmd_t;
+    uint16_t crc16;
+} VisionToEcFrame_t;
 ```
 
-### 字段含义
+## 电控到视觉
 
-- `delta_yaw_1e4rad`
-  - 当前云台还需要再转多少 yaw
-  - 单位：`0.0001 rad`
-- `delta_pitch_1e4rad`
-  - 当前云台还需要再转多少 pitch
-  - 单位：`0.0001 rad`
+电控周期性回传最近采用的 `seq` 和当前实际角度。
 
-### 电控侧解释方式
+固定 13 字节：
 
-当前固件默认使用事件目标模式：
+```text
+Byte0   Byte1   Byte2      Byte3~6       Byte7~10        Byte11~12
+SOF1    SOF2    seq_echo   yaw_actual    pitch_actual    CRC16
+```
 
-- 每收到 1 帧合法视觉命令，只消费 1 次 `delta_yaw_1e4rad` 和 `delta_pitch_1e4rad`
-- 电控在收到该帧的时刻，把 delta 换算成新的绝对目标
-- 新目标会一直保持，直到下一帧合法视觉命令到来
-- 因此视觉不需要高频连续发送；识别频率较慢时也可以正常使用
+字段定义：
 
-换算关系：
+- `SOF1 = 0x5A`
+- `SOF2 = 0xA5`
+- `seq_echo`：`uint8_t`，最近一次被电控采用的视觉命令帧序号
+- `yaw_actual`：`int32_t`，单位 `0.0001 rad`
+- `pitch_actual`：`int32_t`，单位 `0.0001 rad`
+- `CRC16`：`uint16_t`，CRC16/MODBUS，低字节在前
+
+协议结构体示例：
+
+```c
+typedef struct __attribute__((packed))
+{
+    uint8_t sof1;
+    uint8_t sof2;
+    uint8_t seq_echo;
+    int32_t yaw_actual_1e4rad;
+    int32_t pitch_actual_1e4rad;
+    uint16_t crc16;
+} EcToVisionFrame_t;
+```
+
+## 单位与方向
+
+角度换算：
+
+```text
+angle_rad = angle_1e4rad / 10000.0
+angle_deg = angle_rad * 57.29577951
+```
+
+方向约定：
+
+- `delta_yaw > 0`：从上往下看，云台逆时针
+- `delta_pitch > 0`：相机抬头
+
+## 电控解释方式
+
+电控收到合法帧且 `target_valid = 1` 后，按当前实际角度生成目标角：
 
 ```text
 yaw_target   = current_yaw   + delta_yaw
 pitch_target = current_pitch + delta_pitch
 ```
 
-如果视觉没有发送新帧，电控继续保持上一次生成的 `yaw_target` / `pitch_target`，不会反复累加旧 delta。
+说明：
 
-模式开关：
+- 每个合法新帧只消费一次
+- `pitch_target` 会继续经过电控侧软件限位
+- 视觉暂时不发新帧时，电控保持已有目标，不会重复叠加旧增量
+- `target_valid = 0` 时，视觉侧应把 delta 填 `0`，电控不使用该帧生成新的瞄准目标
+- `seq_echo` 只有在命令被电控控制逻辑采用后才更新
 
-- `VISION_CONTROL_MODE=1`：事件目标模式，默认值，适配慢速视觉
-- `VISION_CONTROL_MODE=0`：连续 delta 模式，适合高频连续发送同一时刻的视觉误差
+## CRC16 规则
 
-当前开关位置：
+参数：
 
-- `Application/robot_def.h`
-- `CMakeLists.txt`
+- 类型：`CRC16/MODBUS`
+- 初值：`0xFFFF`
+- 多项式：`0xA001`
+- CRC 低字节在前，高字节在后
 
-对应代码位置：
+视觉到电控 CRC 范围：
 
-- `Application/cmd/robot_cmd.c`
-
-## VisionStatus
-
-### 作用
-
-电控向上位机回传当前云台实际角度，用于显示实时曲线和构造目标/实际对比。
-
-### 数据结构
-
-```c
-typedef struct __attribute__((packed)) {
-    int32_t yaw_actual_1e4rad;
-    int32_t pitch_actual_1e4rad;
-    int16_t last_rx_delta_yaw_1e4rad;
-    int16_t last_rx_delta_pitch_1e4rad;
-} VisionStatus_t;
+```text
+A5 5A seq target_valid delta_yaw_low delta_yaw_high delta_pitch_low delta_pitch_high
 ```
 
-### 字段含义
+也就是前 8 字节，不包含最后 2 字节 CRC。
 
-- `yaw_actual_1e4rad`
-  - 当前 IMU yaw 反馈角
-  - 单位：`0.0001 rad`
-- `pitch_actual_1e4rad`
-  - 当前 IMU pitch 反馈角
-  - 单位：`0.0001 rad`
-- `last_rx_delta_yaw_1e4rad`
-  - 电控最近一次成功接收到的 yaw 增量命令
-  - 单位：`0.0001 rad`
-- `last_rx_delta_pitch_1e4rad`
-  - 电控最近一次成功接收到的 pitch 增量命令
-  - 单位：`0.0001 rad`
+电控到视觉 CRC 范围：
 
-## 工程中的落地位置
+```text
+5A A5 seq_echo yaw_actual[4] pitch_actual[4]
+```
 
-- 协议解析与组包：
-  - `Modules/vision/vision_comm.c`
-- USB 接收入口：
-  - `USB_DEVICE/App/usbd_cdc_if.c`
-- USB 发送入口：
-  - `USB_DEVICE/App/usbd_cdc_if.c`
-- 指令解释：
-  - `Application/cmd/robot_cmd.c`
+也就是前 11 字节，不包含最后 2 字节 CRC。
 
-## 错误处理
+参考实现：
 
-- CRC 错误：丢弃整帧
-- 事件目标模式下，命令超时只作为在线状态诊断；已经生成的云台目标不会因为视觉暂时没发新帧而清零
-- 连续 delta 模式下，命令超时会让最新视觉命令失效
+```c
+#include <stdint.h>
+#include <stddef.h>
 
-当前超时逻辑在：
+static uint16_t crc16_modbus(const uint8_t *data, size_t len)
+{
+    uint16_t crc = 0xFFFF;
 
-- `Modules/vision/vision_comm.c`
+    for (size_t i = 0; i < len; ++i)
+    {
+        crc ^= data[i];
+        for (int bit = 0; bit < 8; ++bit)
+        {
+            if (crc & 0x0001u)
+            {
+                crc = (crc >> 1) ^ 0xA001u;
+            }
+            else
+            {
+                crc >>= 1;
+            }
+        }
+    }
+
+    return crc;
+}
+```
+
+## 自检样例
+
+视觉到电控正数样例：
+
+- `seq = 1`
+- `target_valid = 1`
+- `delta_yaw_1e4rad = 10`
+- `delta_pitch_1e4rad = 8`
+
+完整 10 字节必须为：
+
+```text
+A5 5A 01 01 0A 00 08 00 48 40
+```
+
+视觉到电控负数样例：
+
+- `seq = 2`
+- `target_valid = 1`
+- `delta_yaw_1e4rad = -10`
+- `delta_pitch_1e4rad = -8`
+
+完整 10 字节必须为：
+
+```text
+A5 5A 02 01 F6 FF F8 FF 4C 53
+```
+
+视觉到电控无目标样例：
+
+- `seq = 3`
+- `target_valid = 0`
+- `delta_yaw_1e4rad = 0`
+- `delta_pitch_1e4rad = 0`
+
+完整 10 字节必须为：
+
+```text
+A5 5A 03 00 00 00 00 00 70 7A
+```
+
+电控到视觉正数样例：
+
+- `seq_echo = 1`
+- `yaw_actual_1e4rad = 10`
+- `pitch_actual_1e4rad = 8`
+
+完整 13 字节必须为：
+
+```text
+5A A5 01 0A 00 00 00 08 00 00 00 BF 20
+```
+
+## 工程位置
+
+- 协议解析与组包：`Modules/vision/vision_comm.c`
+- 协议结构与调试变量：`Modules/vision/vision_comm.h`
+- USB CDC 接收入口：`USB_DEVICE/App/usbd_cdc_if.c`
+- 视觉命令解释：`Application/cmd/robot_cmd.c`

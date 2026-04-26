@@ -38,8 +38,19 @@ def rad_to_1e4(rad: float) -> int:
     return clamp_i16(int(round(rad * 10000.0)))
 
 
-def build_cmd_frame(delta_yaw_1e4rad: int, delta_pitch_1e4rad: int) -> bytes:
-    payload = struct.pack("<BBhh", CMD_SOF1, CMD_SOF2, delta_yaw_1e4rad, delta_pitch_1e4rad)
+def build_cmd_frame(seq: int, target_valid: bool, delta_yaw_1e4rad: int, delta_pitch_1e4rad: int) -> bytes:
+    if not target_valid:
+        delta_yaw_1e4rad = 0
+        delta_pitch_1e4rad = 0
+    payload = struct.pack(
+        "<BBBBhh",
+        CMD_SOF1,
+        CMD_SOF2,
+        seq & 0xFF,
+        1 if target_valid else 0,
+        delta_yaw_1e4rad,
+        delta_pitch_1e4rad,
+    )
     crc = crc16_modbus(payload)
     return payload + struct.pack("<H", crc)
 
@@ -67,14 +78,16 @@ def open_serial(port: str, baud: int) -> serial.Serial:
     return ser
 
 
-def send_hold(ser: serial.Serial, yaw_rad: float, pitch_rad: float, hz: int, hold_s: float) -> None:
-    frame = build_cmd_frame(rad_to_1e4(yaw_rad), rad_to_1e4(pitch_rad))
+def send_hold(ser: serial.Serial, seq: int, yaw_rad: float, pitch_rad: float, hz: int, hold_s: float) -> int:
     period = 1.0 / float(hz)
     deadline = time.monotonic() + hold_s
     while time.monotonic() < deadline:
+        frame = build_cmd_frame(seq, True, rad_to_1e4(yaw_rad), rad_to_1e4(pitch_rad))
         ser.write(frame)
         ser.flush()
+        seq = (seq + 1) & 0xFF
         time.sleep(period)
+    return seq
 
 
 def parse_args() -> argparse.Namespace:
@@ -110,6 +123,7 @@ def main() -> int:
         return 1
 
     ser = open_serial(args.port, args.baud)
+    seq = 0
     try:
         for idx, (yaw_rad, pitch_rad) in enumerate(zip(yaw_seq, pitch_seq), start=1):
             print(
@@ -117,8 +131,8 @@ def main() -> int:
                 f"pitch={math.degrees(pitch_rad):+.1f} deg, hold={args.hold:.2f}s",
                 flush=True,
             )
-            send_hold(ser, yaw_rad, pitch_rad, args.hz, args.hold)
-        ser.write(build_cmd_frame(0, 0))
+            seq = send_hold(ser, seq, yaw_rad, pitch_rad, args.hz, args.hold)
+        ser.write(build_cmd_frame(seq, True, 0, 0))
         ser.flush()
     finally:
         ser.close()

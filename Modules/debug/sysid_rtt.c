@@ -4,6 +4,7 @@
 
 #include "gimbal_sysid_telemetry.h"
 #include "robot_def.h"
+#include "rtt_backend.h"
 #include "stm32f4xx_hal.h"
 
 #if GIMBAL_SYSID_MODE != GIMBAL_SYSID_NONE
@@ -27,7 +28,7 @@ void SysIdRtt_Init(void)
     memset((void *)&sysid_rtt_debug, 0, sizeof(sysid_rtt_debug));
 
 #if GIMBAL_SYSID_MODE != GIMBAL_SYSID_NONE
-    SEGGER_RTT_Init();
+    RttBackend_Init();
     SEGGER_RTT_ConfigUpBuffer(SYSID_RTT_UP_BUFFER_INDEX,
                               "sysid",
                               sysid_rtt_up_buffer,

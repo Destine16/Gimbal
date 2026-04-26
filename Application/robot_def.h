@@ -55,6 +55,27 @@
 #define DAEMON_TASK_PERIOD_MS           10u
 #define VISION_CMD_TIMEOUT_MS      100u
 #define VISION_STATUS_TX_PERIOD_MS  20u
+#ifndef VISION_DEBUG_RTT_ENABLE
+#define VISION_DEBUG_RTT_ENABLE     0u
+#endif
+#define VISION_DEBUG_RTT_TX_PERIOD_MS 20u
+
+// 哨兵模式参数。无目标时电控自行扫描; 有目标时使用视觉 delta 跟踪。
+#define SENTRY_SCAN_YAW_RANGE_RAD        0.78539816f  // +/-45 deg
+#define SENTRY_SCAN_PITCH_RANGE_RAD      0.17453293f  // +/-10 deg
+#define SENTRY_SCAN_YAW_SPEED_RAD_S      0.35f
+#define SENTRY_SCAN_PITCH_SPEED_RAD_S    0.12f
+#define SENTRY_TARGET_LOST_HOLD_MS       150u
+#define SENTRY_TARGET_LOST_TO_SCAN_MS    300u
+
+// 堵转检测: 输出接近 bring-up 限幅、速度很低、角度误差仍较大并持续一段时间。
+#define SENTRY_STALL_OUTPUT_THRESHOLD_RAW   4500.0f
+#define SENTRY_STALL_SPEED_THRESHOLD_RAD_S  0.05f
+#define SENTRY_STALL_ANGLE_ERROR_MIN_RAD    0.05f
+#define SENTRY_STALL_DETECT_MS              200u
+#define SENTRY_STALL_RECOVERY_MS            400u
+#define SENTRY_STALL_YAW_BACKOFF_RAD        0.17453293f  // 10 deg
+#define SENTRY_STALL_PITCH_BACKOFF_RAD      0.08726646f  // 5 deg
 
 // 视觉 delta 命令使用策略:
 // CONTINUOUS: 视觉在线期间每周期使用 latest delta,适合视觉高频连续发送

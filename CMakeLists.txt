@@ -31,6 +31,7 @@ message("Build type: " ${CMAKE_BUILD_TYPE})
 option(IMU_ONLY_BRINGUP_ENABLE "Bring up only IMU-related tasks and skip robot/motor init" OFF)
 option(GIMBAL_YAW_ONLY_TEST_ENABLE "Enable temporary yaw-only gimbal test mode" OFF)
 option(GIMBAL_PITCH_ONLY_TEST_ENABLE "Enable temporary pitch-only gimbal test mode" OFF)
+option(VISION_DEBUG_RTT_ENABLE "Enable normal vision-control RTT debug telemetry" OFF)
 set(VISION_CONTROL_MODE "1" CACHE STRING "Vision control mode: 0=continuous delta, 1=event delta to held target")
 set_property(CACHE VISION_CONTROL_MODE PROPERTY STRINGS 0 1)
 set(GIMBAL_SYSID_MODE "0" CACHE STRING "Gimbal system identification mode: 0=off, 1=yaw PRBS, 2=pitch feedforward, 3=yaw step, 4=pitch hysteresis")
@@ -60,7 +61,9 @@ target_sources(${CMAKE_PROJECT_NAME} PRIVATE
     Application/sysid/gimbal_sysid.c
     Application/sysid/gimbal_sysid_telemetry.c
     Modules/bsp/bsp_dwt.c
+    Modules/debug/rtt_backend.c
     Modules/debug/sysid_rtt.c
+    Modules/debug/vision_debug_rtt.c
     Modules/message_center/message_center.c
     Modules/daemon/daemon.c
     Modules/algorithm/controller.c
@@ -103,7 +106,13 @@ target_compile_definitions(${CMAKE_PROJECT_NAME} PRIVATE
     GIMBAL_SYSID_MODE=${GIMBAL_SYSID_MODE}
 )
 
-if(NOT GIMBAL_SYSID_MODE STREQUAL "0")
+if(VISION_DEBUG_RTT_ENABLE)
+    target_compile_definitions(${CMAKE_PROJECT_NAME} PRIVATE VISION_DEBUG_RTT_ENABLE=1)
+else()
+    target_compile_definitions(${CMAKE_PROJECT_NAME} PRIVATE VISION_DEBUG_RTT_ENABLE=0)
+endif()
+
+if((NOT GIMBAL_SYSID_MODE STREQUAL "0") OR VISION_DEBUG_RTT_ENABLE)
     target_sources(${CMAKE_PROJECT_NAME} PRIVATE
         /home/skyvector/basic_framework/Middlewares/Third_Party/SEGGER/RTT/SEGGER_RTT.c
     )

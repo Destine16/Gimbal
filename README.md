@@ -83,10 +83,10 @@ H = -714.2191
 
 ## 视觉通信
 
-视觉侧发送固定 8 字节二进制帧：
+视觉侧发送固定 10 字节二进制帧：
 
 ```text
-A5 5A | delta_yaw int16 | delta_pitch int16 | CRC16/MODBUS
+A5 5A | seq uint8 | target_valid uint8 | delta_yaw int16 | delta_pitch int16 | CRC16/MODBUS
 ```
 
 单位：
@@ -94,6 +94,14 @@ A5 5A | delta_yaw int16 | delta_pitch int16 | CRC16/MODBUS
 ```text
 delta_yaw   = int16_t, 0.0001 rad
 delta_pitch = int16_t, 0.0001 rad
+```
+
+`target_valid = 1` 表示当前有目标；`target_valid = 0` 表示当前无目标，此时视觉侧应把 delta 填 0。
+
+电控侧回传固定 13 字节状态帧：
+
+```text
+5A A5 | seq_echo uint8 | yaw_actual int32 | pitch_actual int32 | CRC16/MODBUS
 ```
 
 当前默认控制模式是事件目标模式：
@@ -108,6 +116,13 @@ VISION_CONTROL_MODE = 1
 - 固件把 delta 转成新的绝对目标
 - 新目标持续保持到下一帧合法命令到来
 - 适合视觉侧低频发送，不要求连续高速发送
+
+哨兵模式行为：
+
+- `target_valid = 0`：电控进入无目标扫描，在当前中心附近做 yaw 左右扫描和 pitch 小幅上下扫描
+- `target_valid = 1`：电控停止扫描，使用视觉 delta 跟踪装甲板
+- 目标短暂丢失时先保持上一目标，超过延时后回到扫描
+- 检测到堵转时清对应轴 PID，并向反方向回退一小段后恢复扫描
 
 协议细节见：
 
@@ -129,7 +144,7 @@ Application/
 Modules/
   algorithm/                      PID、CRC16、QuaternionEKF、Kalman Filter
   bsp/                            DWT 计时工具
-  debug/                          RTT 系统辨识输出
+  debug/                          RTT 系统辨识输出、普通视觉链路调试输出
   imu/                            BMI088 驱动与 INS 任务
   message_center/                 轻量消息中心
   motor/                          GM6020 驱动、CAN、三环控制
@@ -139,6 +154,7 @@ host_tools/
   vision_jog_gui.py               USB CDC 云台键盘/GUI 测试工具
   vision_step_sender.py           USB CDC 阶跃命令发送工具
   gimbal_sysid_rtt_capture.py     SEGGER RTT 系统辨识采集工具
+  vision_debug_rtt_capture.py     SEGGER RTT 普通视觉链路调试采集工具
   analyze_*_sysid.py              系统辨识分析脚本
   optimize_yaw_pid_model.py       yaw PID 模型优化脚本
 ```
@@ -161,9 +177,18 @@ build/Debug/Gimbal.elf
 普通云台固件应确认：
 
 ```bash
-cmake --preset Debug -DGIMBAL_SYSID_MODE=0
+cmake --preset Debug -DGIMBAL_SYSID_MODE=0 -DVISION_DEBUG_RTT_ENABLE=OFF
 cmake --build --preset Debug
 ```
+
+普通视觉链路 RTT 调试固件：
+
+```bash
+cmake --preset Debug -DGIMBAL_SYSID_MODE=0 -DVISION_CONTROL_MODE=1 -DVISION_DEBUG_RTT_ENABLE=ON
+cmake --build --preset Debug
+```
+
+打开 `VISION_DEBUG_RTT_ENABLE` 后，固件上电运行时会自动向 RTT up-buffer 2 输出 `vision_dbg` 二进制调试帧。不开启时不会输出普通视觉调试日志。
 
 ## 烧录
 
@@ -226,10 +251,18 @@ RTT 采集示例：
   --output data/sysid/pitch_hyst_rtt_$(date +%Y%m%d_%H%M%S).csv
 ```
 
+普通视觉链路 RTT 调试采集示例：
+
+```bash
+.venv-host/bin/python host_tools/vision_debug_rtt_capture.py --duration 60 --kill-conflicts
+```
+
+该脚本默认不复位目标板，适合在视觉联调过程中直接附着采集。输出 CSV 默认保存在 `data/debug/`。
+
 实验结束后务必切回普通模式：
 
 ```bash
-cmake --preset Debug -DGIMBAL_SYSID_MODE=0
+cmake --preset Debug -DGIMBAL_SYSID_MODE=0 -DVISION_DEBUG_RTT_ENABLE=OFF
 cmake --build --preset Debug
 ```
 
@@ -256,4 +289,3 @@ cmake --build --preset Debug
 - IMU 方向和云台业务坐标一致
 - USB CDC 设备名选中的是主控板，不是 J-Link
 - pitch 前馈和滞回补偿打开后没有明显跳变
-
