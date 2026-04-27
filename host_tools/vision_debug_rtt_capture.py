@@ -18,10 +18,10 @@ import pylink
 
 SOF1 = 0xA7
 SOF2 = 0x7A
-VERSION = 1
-FRAME_LEN = 189
-CRC_INPUT_LEN = 187
-PAYLOAD_FORMAT = "<8I3B4i4B4B4i4B6I4B8ihh4B8ihh"
+VERSION = 5
+FRAME_LEN = 329
+CRC_INPUT_LEN = 327
+PAYLOAD_FORMAT = "<8I3B14i3iI2BIi3i4B4B4i4B6I3I2HB2I4B8ihhHi3i4B8ihhHi3i"
 DEFAULT_DURATION_S = 60.0
 DEFAULT_DEVICE = "STM32F405RG"
 DEFAULT_SPEED_KHZ = 4000
@@ -54,6 +54,27 @@ BASE_COLUMNS = [
     "last_delta_pitch_rad",
     "actual_yaw_rad",
     "actual_pitch_rad",
+    "imu_gyro_x_rad_s",
+    "imu_gyro_y_rad_s",
+    "imu_gyro_z_rad_s",
+    "imu_accel_x_m_s2",
+    "imu_accel_y_m_s2",
+    "imu_accel_z_m_s2",
+    "imu_roll_rad",
+    "imu_pitch_rad",
+    "imu_yaw_rad",
+    "imu_yaw_total_rad",
+    "imu_yaw_gyro_raw_rad_s",
+    "imu_yaw_gyro_bias_rad_s",
+    "imu_yaw_gyro_corrected_rad_s",
+    "imu_yaw_gyro_bias_sample_count",
+    "imu_yaw_gyro_bias_ready",
+    "ekf_stable_flag",
+    "ekf_error_count",
+    "ekf_chi_square",
+    "ekf_gyro_bias_x_rad_s",
+    "ekf_gyro_bias_y_rad_s",
+    "ekf_gyro_bias_z_rad_s",
     "robot_state",
     "gimbal_ready",
     "gimbal_mode",
@@ -76,6 +97,14 @@ BASE_COLUMNS = [
     "can_tx_abort_count",
     "can_last_hal_error",
     "can_last_can_error_code",
+    "can_rx_total_count",
+    "can_rx_matched_count",
+    "can_rx_unmatched_count",
+    "can_last_rx_std_id",
+    "can_last_unmatched_rx_std_id",
+    "can_last_rx_dlc",
+    "can_rx_0x206_count",
+    "can_rx_0x208_count",
 ]
 
 MOTOR_COLUMNS = [
@@ -93,6 +122,11 @@ MOTOR_COLUMNS = [
     "output_ff_raw",
     "output_cmd",
     "real_current",
+    "encoder_raw",
+    "encoder_total_round",
+    "encoder_single_round_rad",
+    "encoder_total_angle_rad",
+    "encoder_speed_rad_s",
 ]
 
 COLUMNS = BASE_COLUMNS + [f"yaw_{name}" for name in MOTOR_COLUMNS] + [f"pitch_{name}" for name in MOTOR_COLUMNS]
@@ -180,7 +214,12 @@ def unpack_motor(prefix: str, values: tuple[int, ...], offset: int) -> tuple[dic
         output_ff,
         output_cmd,
         real_current,
-    ) = values[offset : offset + 14]
+        encoder_raw,
+        encoder_total_round,
+        encoder_single_round,
+        encoder_total_angle,
+        encoder_speed,
+    ) = values[offset : offset + 19]
     return {
         f"{prefix}_valid": valid,
         f"{prefix}_enabled": enabled,
@@ -196,11 +235,19 @@ def unpack_motor(prefix: str, values: tuple[int, ...], offset: int) -> tuple[dic
         f"{prefix}_output_ff_raw": output_ff / 1000.0,
         f"{prefix}_output_cmd": output_cmd,
         f"{prefix}_real_current": real_current,
-    }, offset + 14
+        f"{prefix}_encoder_raw": encoder_raw,
+        f"{prefix}_encoder_total_round": encoder_total_round,
+        f"{prefix}_encoder_single_round_rad": encoder_single_round / 1_000_000.0,
+        f"{prefix}_encoder_total_angle_rad": encoder_total_angle / 1_000_000.0,
+        f"{prefix}_encoder_speed_rad_s": encoder_speed / 1_000_000.0,
+    }, offset + 19
 
 
 def parse_frame(frame: bytes, host_time_s: float) -> dict[str, float | int]:
-    if frame[0] != SOF1 or frame[1] != SOF2 or frame[2] != VERSION or frame[3] != FRAME_LEN:
+    if frame[0] != SOF1 or frame[1] != SOF2 or frame[2] != VERSION:
+        raise ValueError("bad header")
+    frame_len = struct.unpack("<H", frame[3:5])[0]
+    if frame_len != FRAME_LEN:
         raise ValueError("bad header")
 
     recv_crc = struct.unpack("<H", frame[CRC_INPUT_LEN:FRAME_LEN])[0]
@@ -208,7 +255,7 @@ def parse_frame(frame: bytes, host_time_s: float) -> dict[str, float | int]:
     if recv_crc != calc_crc:
         raise ValueError("crc mismatch")
 
-    values = struct.unpack(PAYLOAD_FORMAT, frame[4:CRC_INPUT_LEN])
+    values = struct.unpack(PAYLOAD_FORMAT, frame[5:CRC_INPUT_LEN])
     offset = 0
     (
         tick_ms,
@@ -232,6 +279,38 @@ def parse_frame(frame: bytes, host_time_s: float) -> dict[str, float | int]:
         last_delta_pitch,
         actual_yaw,
         actual_pitch,
+        imu_gyro_x,
+        imu_gyro_y,
+        imu_gyro_z,
+        imu_accel_x,
+        imu_accel_y,
+        imu_accel_z,
+        imu_roll,
+        imu_pitch,
+        imu_yaw,
+        imu_yaw_total,
+    ) = values[offset : offset + 14]
+    offset += 14
+    (
+        imu_yaw_gyro_raw,
+        imu_yaw_gyro_bias,
+        imu_yaw_gyro_corrected,
+    ) = values[offset : offset + 3]
+    offset += 3
+    imu_yaw_gyro_bias_sample_count = values[offset]
+    offset += 1
+    (
+        imu_yaw_gyro_bias_ready,
+        ekf_stable_flag,
+    ) = values[offset : offset + 2]
+    offset += 2
+    ekf_error_count = values[offset]
+    offset += 1
+    (
+        ekf_chi_square,
+        ekf_gyro_bias_x,
+        ekf_gyro_bias_y,
+        ekf_gyro_bias_z,
     ) = values[offset : offset + 4]
     offset += 4
     (
@@ -271,6 +350,24 @@ def parse_frame(frame: bytes, host_time_s: float) -> dict[str, float | int]:
         can_last_can_error_code,
     ) = values[offset : offset + 6]
     offset += 6
+    (
+        can_rx_total_count,
+        can_rx_matched_count,
+        can_rx_unmatched_count,
+    ) = values[offset : offset + 3]
+    offset += 3
+    (
+        can_last_rx_std_id,
+        can_last_unmatched_rx_std_id,
+    ) = values[offset : offset + 2]
+    offset += 2
+    can_last_rx_dlc = values[offset]
+    offset += 1
+    (
+        can_rx_0x206_count,
+        can_rx_0x208_count,
+    ) = values[offset : offset + 2]
+    offset += 2
 
     row: dict[str, float | int] = {
         "host_time_s": host_time_s,
@@ -289,6 +386,27 @@ def parse_frame(frame: bytes, host_time_s: float) -> dict[str, float | int]:
         "last_delta_pitch_rad": last_delta_pitch / 1_000_000.0,
         "actual_yaw_rad": actual_yaw / 1_000_000.0,
         "actual_pitch_rad": actual_pitch / 1_000_000.0,
+        "imu_gyro_x_rad_s": imu_gyro_x / 1_000_000.0,
+        "imu_gyro_y_rad_s": imu_gyro_y / 1_000_000.0,
+        "imu_gyro_z_rad_s": imu_gyro_z / 1_000_000.0,
+        "imu_accel_x_m_s2": imu_accel_x / 1_000_000.0,
+        "imu_accel_y_m_s2": imu_accel_y / 1_000_000.0,
+        "imu_accel_z_m_s2": imu_accel_z / 1_000_000.0,
+        "imu_roll_rad": imu_roll / 1_000_000.0,
+        "imu_pitch_rad": imu_pitch / 1_000_000.0,
+        "imu_yaw_rad": imu_yaw / 1_000_000.0,
+        "imu_yaw_total_rad": imu_yaw_total / 1_000_000.0,
+        "imu_yaw_gyro_raw_rad_s": imu_yaw_gyro_raw / 1_000_000.0,
+        "imu_yaw_gyro_bias_rad_s": imu_yaw_gyro_bias / 1_000_000.0,
+        "imu_yaw_gyro_corrected_rad_s": imu_yaw_gyro_corrected / 1_000_000.0,
+        "imu_yaw_gyro_bias_sample_count": imu_yaw_gyro_bias_sample_count,
+        "imu_yaw_gyro_bias_ready": imu_yaw_gyro_bias_ready,
+        "ekf_stable_flag": ekf_stable_flag,
+        "ekf_error_count": ekf_error_count,
+        "ekf_chi_square": ekf_chi_square / 1_000_000.0,
+        "ekf_gyro_bias_x_rad_s": ekf_gyro_bias_x / 1_000_000.0,
+        "ekf_gyro_bias_y_rad_s": ekf_gyro_bias_y / 1_000_000.0,
+        "ekf_gyro_bias_z_rad_s": ekf_gyro_bias_z / 1_000_000.0,
         "robot_state": robot_state,
         "gimbal_ready": gimbal_ready,
         "gimbal_mode": gimbal_mode,
@@ -311,6 +429,14 @@ def parse_frame(frame: bytes, host_time_s: float) -> dict[str, float | int]:
         "can_tx_abort_count": can_tx_abort_count,
         "can_last_hal_error": can_last_hal_error,
         "can_last_can_error_code": can_last_can_error_code,
+        "can_rx_total_count": can_rx_total_count,
+        "can_rx_matched_count": can_rx_matched_count,
+        "can_rx_unmatched_count": can_rx_unmatched_count,
+        "can_last_rx_std_id": can_last_rx_std_id,
+        "can_last_unmatched_rx_std_id": can_last_unmatched_rx_std_id,
+        "can_last_rx_dlc": can_last_rx_dlc,
+        "can_rx_0x206_count": can_rx_0x206_count,
+        "can_rx_0x208_count": can_rx_0x208_count,
     }
 
     yaw_row, offset = unpack_motor("yaw", values, offset)
@@ -327,7 +453,7 @@ def drain_frames(rx_buffer: bytearray, host_time_s: float) -> tuple[list[dict[st
         if rx_buffer[0] != SOF1 or rx_buffer[1] != SOF2:
             del rx_buffer[0]
             continue
-        if rx_buffer[3] != FRAME_LEN:
+        if len(rx_buffer) >= 5 and struct.unpack("<H", rx_buffer[3:5])[0] != FRAME_LEN:
             del rx_buffer[0]
             continue
 
@@ -396,7 +522,8 @@ def print_live_summary(elapsed: float, frame_count: int, crc_error_count: int, l
     print(
         "t={:5.1f}s frames={} crc_errors={} valid={} age={}ms "
         "seq={}->{} rx_valid={} dyaw={:+.3f}deg dpitch={:+.3f}deg "
-        "state={} target={} stall_axis={} yaw_out={} pitch_out={}".format(
+        "state={} target={} stall_axis={} yaw_out={} pitch_out={} "
+        "rx206={} rx208={} last_id=0x{:03X}".format(
             elapsed,
             frame_count,
             crc_error_count,
@@ -412,6 +539,9 @@ def print_live_summary(elapsed: float, frame_count: int, crc_error_count: int, l
             last_row["stall_axis"],
             last_row["yaw_output_cmd"],
             last_row["pitch_output_cmd"],
+            last_row["can_rx_0x206_count"],
+            last_row["can_rx_0x208_count"],
+            int(last_row["can_last_rx_std_id"]),
         ),
         flush=True,
     )

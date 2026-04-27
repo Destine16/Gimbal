@@ -1,7 +1,7 @@
 #include "QuaternionEKF.h"
 #include "general_def.h"
 
-#define IMU_EKF_CHI_SQUARE_THRESHOLD 12.0f
+#define IMU_EKF_CHI_SQUARE_THRESHOLD 120.0f
 // EKF 启动期的不确定度配置。
 // 姿态按约 0.5 deg 的初始不确定度处理,xy 轴 gyro bias 按约 0.002 rad/s 处理。
 #define IMU_EKF_INIT_ATTITUDE_STD_RAD  (0.008726646f) // 0.5 deg

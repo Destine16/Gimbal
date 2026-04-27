@@ -50,23 +50,28 @@
 #define GIMBAL_PITCH_MAX_RAD      (0.73303829f)
 
 // 在线监测和视觉通信周期参数,单位 ms
-#define GIMBAL_IMU_OFFLINE_TIMEOUT_MS   20u
+#define GIMBAL_IMU_OFFLINE_TIMEOUT_MS   100u
 #define GIMBAL_MOTOR_OFFLINE_TIMEOUT_MS 50u
 #define DAEMON_TASK_PERIOD_MS           10u
 #define VISION_CMD_TIMEOUT_MS      100u
-#define VISION_STATUS_TX_PERIOD_MS  20u
+#define VISION_STATUS_TX_PERIOD_MS  10u
 #ifndef VISION_DEBUG_RTT_ENABLE
 #define VISION_DEBUG_RTT_ENABLE     0u
 #endif
+#ifndef IMU_MOUNT_CALIBRATION_ENABLE
+#define IMU_MOUNT_CALIBRATION_ENABLE 0u
+#endif
 #define VISION_DEBUG_RTT_TX_PERIOD_MS 20u
 
-// 哨兵模式参数。无目标时电控自行扫描; 有目标时使用视觉 delta 跟踪。
+// 哨兵模式参数。无目标时自动扫描; 有目标时使用视觉 delta 跟踪。
+#define SENTRY_SCAN_ENABLE               0u
 #define SENTRY_SCAN_YAW_RANGE_RAD        0.78539816f  // +/-45 deg
-#define SENTRY_SCAN_PITCH_RANGE_RAD      0.17453293f  // +/-10 deg
-#define SENTRY_SCAN_YAW_SPEED_RAD_S      0.35f
-#define SENTRY_SCAN_PITCH_SPEED_RAD_S    0.12f
+#define SENTRY_SCAN_PITCH_RANGE_RAD      0.61086524f  // +/-35 deg
+#define SENTRY_SCAN_YAW_SPEED_RAD_S      1.04719755f  // 60 deg/s
+#define SENTRY_SCAN_PITCH_SPEED_RAD_S    0.52359878f  // 30 deg/s
 #define SENTRY_TARGET_LOST_HOLD_MS       150u
 #define SENTRY_TARGET_LOST_TO_SCAN_MS    300u
+#define SENTRY_READY_LOSS_RESET_MS       200u
 
 // 堵转检测: 输出接近 bring-up 限幅、速度很低、角度误差仍较大并持续一段时间。
 #define SENTRY_STALL_OUTPUT_THRESHOLD_RAW   4500.0f

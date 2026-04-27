@@ -14,6 +14,17 @@ static INS_t INS = {
 static IMU_Param_t IMU_Param;
 static DaemonInstance *ins_daemon_instance; // INS 更新在线监测
 
+#define INS_YAW_GYRO_BIAS_BOOT_SAMPLES      800u
+#define INS_YAW_GYRO_BIAS_TRACK_ALPHA       0.0005f
+#define INS_YAW_GYRO_STATIC_GYRO_LIMIT      0.05f
+#define INS_YAW_GYRO_STATIC_ACCEL_MIN       9.3f
+#define INS_YAW_GYRO_STATIC_ACCEL_MAX       10.3f
+#define INS_EKF_Q1                          1e-7f
+#define INS_EKF_Q2                          1e-7f
+#define INS_EKF_R                           1e-4f
+#define INS_EKF_LAMBDA                      0.9996f
+#define INS_EKF_ACCEL_LPF_RC_S              0.0200f
+
 // 预留派生量所需的机体系基向量; 当前工程主线暂未使用,先注释保留
 #if 0
 const float xb[3] = {1, 0, 0};
@@ -26,6 +37,7 @@ static uint32_t INS_DWT_Count = 0;
 static float dt = 0;
 
 static void BMI088_ToGimbalFrame(const float bmi088_vec[3], float gimbal_vec[3]);
+static void INS_UpdateYawGyroBias(float gyro[3], const float accel[3]);
 static void IMU_Param_Correction(IMU_Param_t *param, float gyro[3], float accel[3]);
 static float Dot3(const float a[3], const float b[3]);
 static void Cross3(const float a[3], const float b[3], float out[3]);
@@ -98,19 +110,22 @@ const INS_t *INS_Init(void)
         return NULL;
     }
 
-    // IMU 安装/比例修正参数: 当前保持单位比例和零安装角,等效于不做额外修正
+    // IMU 安装修正参数: 用于补偿 BMI088 与云台业务坐标之间的小角度安装误差。
     IMU_Param.scale[X] = 1;
     IMU_Param.scale[Y] = 1;
     IMU_Param.scale[Z] = 1;
-    IMU_Param.Yaw = 0;
-    IMU_Param.Pitch = 0;
-    IMU_Param.Roll = 0;
+    IMU_Param.Yaw = -0.015812789f;
+    IMU_Param.Pitch = 0.034887356f;
+    IMU_Param.Roll = -0.014814032f;
     IMU_Param.flag = 1;
 
     InitQuaternion(init_quaternion);
-    // 基于 static.csv 的静态噪声估计,这里先采用更稳的工程初值:
-    // Q1/Q2/R 贴近静态数据量级,同时给出保守的 lambda/lpf 便于后续继续动态整定。
-    IMU_QuaternionEKF_Init(init_quaternion, 1e-7f, 1e-7f, 1e-5f, 0.9996f, 0.0085f);
+    IMU_QuaternionEKF_Init(init_quaternion,
+                           INS_EKF_Q1,
+                           INS_EKF_Q2,
+                           INS_EKF_R,
+                           INS_EKF_LAMBDA,
+                           INS_EKF_ACCEL_LPF_RC_S);
 #if !IMU_ONLY_BRINGUP_ENABLE
     BMI088_AsyncEnable();
 #endif
@@ -129,7 +144,12 @@ const INS_t *INS_Init(void)
     }
 
     // noise of accel is relatively big and of high freq,thus lpf is used
-    INS.AccelLPF = 0.0085;
+    INS.AccelLPF = INS_EKF_ACCEL_LPF_RC_S;
+    INS.YawGyroRaw = 0.0f;
+    INS.YawGyroBias = 0.0f;
+    INS.YawGyroCorrected = 0.0f;
+    INS.YawGyroBiasSampleCount = 0u;
+    INS.YawGyroBiasReady = 0u;
     DWT_GetDeltaT(&INS_DWT_Count);
     INS.init = 1;
     INS.init_error = BMI088_NO_ERROR;
@@ -144,7 +164,7 @@ const INS_t *INS_GetData(void)
 // 只有 INS 已完成初始化,且其 daemon 计数未超时,才认为当前 IMU 在线
 uint8_t INS_IsOnline(void)
 {
-    return (uint8_t)(INS.init && DaemonIsOnline(ins_daemon_instance));
+    return (uint8_t)(INS.init && INS.YawGyroBiasReady && DaemonIsOnline(ins_daemon_instance));
 }
 
 /* 注意以1kHz的频率运行此任务 */
@@ -187,6 +207,7 @@ void INS_Task(void)
 
     // 用于修正安装误差; 当前参数为单位变换
     IMU_Param_Correction(&IMU_Param, INS.Gyro, INS.Accel);
+    INS_UpdateYawGyroBias(INS.Gyro, INS.Accel);
 
     // 预留扩展: 当前工程未启用这两个角度量,这里只保留计算入口注释
     // INS.atanxz = -atan2f(INS.Accel[X], INS.Accel[Z]);
@@ -232,6 +253,52 @@ static void BMI088_ToGimbalFrame(const float bmi088_vec[3], float gimbal_vec[3])
     gimbal_vec[X] = -bmi088_vec[X];
     gimbal_vec[Y] = -bmi088_vec[Y];
     gimbal_vec[Z] = bmi088_vec[Z];
+}
+
+static void INS_UpdateYawGyroBias(float gyro[3], const float accel[3])
+{
+    float yaw_gyro_raw;
+    float yaw_gyro_corrected;
+    float accel_norm;
+    uint8_t raw_static_candidate;
+    uint8_t static_candidate;
+
+    if ((gyro == NULL) || (accel == NULL))
+    {
+        return;
+    }
+
+    yaw_gyro_raw = gyro[Z];
+    yaw_gyro_corrected = yaw_gyro_raw - INS.YawGyroBias;
+    accel_norm = sqrtf(accel[X] * accel[X] + accel[Y] * accel[Y] + accel[Z] * accel[Z]);
+    raw_static_candidate = (uint8_t)((accel_norm > INS_YAW_GYRO_STATIC_ACCEL_MIN) &&
+                                     (accel_norm < INS_YAW_GYRO_STATIC_ACCEL_MAX) &&
+                                     (fabsf(gyro[X]) < INS_YAW_GYRO_STATIC_GYRO_LIMIT) &&
+                                     (fabsf(gyro[Y]) < INS_YAW_GYRO_STATIC_GYRO_LIMIT) &&
+                                     (fabsf(yaw_gyro_raw) < INS_YAW_GYRO_STATIC_GYRO_LIMIT));
+    static_candidate = (uint8_t)(raw_static_candidate &&
+                                 (fabsf(yaw_gyro_corrected) < INS_YAW_GYRO_STATIC_GYRO_LIMIT));
+
+    if (INS.YawGyroBiasSampleCount < INS_YAW_GYRO_BIAS_BOOT_SAMPLES)
+    {
+        if (raw_static_candidate)
+        {
+            INS.YawGyroBiasSampleCount++;
+            INS.YawGyroBias += (yaw_gyro_raw - INS.YawGyroBias) / (float)INS.YawGyroBiasSampleCount;
+            if (INS.YawGyroBiasSampleCount >= INS_YAW_GYRO_BIAS_BOOT_SAMPLES)
+            {
+                INS.YawGyroBiasReady = 1u;
+            }
+        }
+    }
+    else if (static_candidate)
+    {
+        INS.YawGyroBias += INS_YAW_GYRO_BIAS_TRACK_ALPHA * (yaw_gyro_raw - INS.YawGyroBias);
+    }
+
+    gyro[Z] = yaw_gyro_raw - INS.YawGyroBias;
+    INS.YawGyroRaw = yaw_gyro_raw;
+    INS.YawGyroCorrected = gyro[Z];
 }
 
 /**

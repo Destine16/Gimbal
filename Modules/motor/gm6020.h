@@ -99,6 +99,10 @@ typedef struct
     float output_ff_raw;
     int16_t output_cmd;
     int16_t real_current;
+    uint16_t encoder_raw;
+    int32_t encoder_total_round;
+    float encoder_single_round_rad;
+    float encoder_total_angle_rad;
     float motor_speed_rad_s;
     float angle_pid_pout;
     float angle_pid_iout;
@@ -131,6 +135,15 @@ typedef struct
     uint8_t last_tx_group;
     uint8_t last_tx_data[8];
     int16_t last_output_cmd[GM6020_MAX_NUM];
+    uint32_t rx_total_count;
+    uint32_t rx_matched_count;
+    uint32_t rx_unmatched_count;
+    uint32_t rx_feedback_id_count[GM6020_MAX_NUM]; // 0x205..0x20C
+    uint32_t last_rx_tick_ms;
+    uint16_t last_rx_std_id;
+    uint16_t last_matched_rx_std_id;
+    uint16_t last_unmatched_rx_std_id;
+    uint8_t last_rx_dlc;
 } GM6020_Debug_s;
 
 extern volatile GM6020_Debug_s gm6020_debug;

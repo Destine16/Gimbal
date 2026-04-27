@@ -5,6 +5,7 @@
 
 #include "crc16.h"
 #include "gm6020.h"
+#include "ins_task.h"
 #include "robot_cmd.h"
 #include "robot_def.h"
 #include "rtt_backend.h"
@@ -19,9 +20,9 @@
 #define VISION_DEBUG_RTT_UP_BUFFER_SIZE  8192u
 #define VISION_DEBUG_RTT_SOF1            0xA7u
 #define VISION_DEBUG_RTT_SOF2            0x7Au
-#define VISION_DEBUG_RTT_VERSION         1u
-#define VISION_DEBUG_RTT_FRAME_LEN       189u
-#define VISION_DEBUG_RTT_CRC_INPUT_LEN   187u
+#define VISION_DEBUG_RTT_VERSION         5u
+#define VISION_DEBUG_RTT_FRAME_LEN       329u
+#define VISION_DEBUG_RTT_CRC_INPUT_LEN   327u
 
 volatile VisionDebugRttDebug_s vision_debug_rtt_debug;
 
@@ -106,6 +107,11 @@ static void VisionDebugRtt_PutMotorSnapshot(uint8_t *frame,
     VisionDebugRtt_PutI32(frame, index, VisionDebugRtt_ScaleI32(snapshot->output_ff_raw, 1000.0f));
     VisionDebugRtt_PutI16(frame, index, snapshot->output_cmd);
     VisionDebugRtt_PutI16(frame, index, snapshot->real_current);
+    VisionDebugRtt_PutU16(frame, index, snapshot->encoder_raw);
+    VisionDebugRtt_PutI32(frame, index, snapshot->encoder_total_round);
+    VisionDebugRtt_PutI32(frame, index, VisionDebugRtt_ScaleI32(snapshot->encoder_single_round_rad, 1000000.0f));
+    VisionDebugRtt_PutI32(frame, index, VisionDebugRtt_ScaleI32(snapshot->encoder_total_angle_rad, 1000000.0f));
+    VisionDebugRtt_PutI32(frame, index, VisionDebugRtt_ScaleI32(snapshot->motor_speed_rad_s, 1000000.0f));
 }
 
 static uint8_t VisionDebugRtt_BuildFrame(uint8_t *frame, uint16_t frame_len)
@@ -115,6 +121,7 @@ static uint8_t VisionDebugRtt_BuildFrame(uint8_t *frame, uint16_t frame_len)
     uint32_t now_tick = HAL_GetTick();
     GM6020_ControlSnapshot_s yaw_snapshot;
     GM6020_ControlSnapshot_s pitch_snapshot;
+    const INS_t *ins = INS_GetData();
 
     if ((frame == NULL) || (frame_len < VISION_DEBUG_RTT_FRAME_LEN))
     {
@@ -127,7 +134,7 @@ static uint8_t VisionDebugRtt_BuildFrame(uint8_t *frame, uint16_t frame_len)
     VisionDebugRtt_PutU8(frame, &idx, VISION_DEBUG_RTT_SOF1);
     VisionDebugRtt_PutU8(frame, &idx, VISION_DEBUG_RTT_SOF2);
     VisionDebugRtt_PutU8(frame, &idx, VISION_DEBUG_RTT_VERSION);
-    VisionDebugRtt_PutU8(frame, &idx, VISION_DEBUG_RTT_FRAME_LEN);
+    VisionDebugRtt_PutU16(frame, &idx, VISION_DEBUG_RTT_FRAME_LEN);
 
     VisionDebugRtt_PutU32(frame, &idx, now_tick);
     VisionDebugRtt_PutU32(frame, &idx, vision_debug_rtt_seq++);
@@ -149,6 +156,48 @@ static uint8_t VisionDebugRtt_BuildFrame(uint8_t *frame, uint16_t frame_len)
     VisionDebugRtt_PutI32(frame, &idx, VisionDebugRtt_ScaleI32(vision_debug.last_delta_pitch_rad, 1000000.0f));
     VisionDebugRtt_PutI32(frame, &idx, VisionDebugRtt_ScaleI32(vision_debug.actual_yaw_rad, 1000000.0f));
     VisionDebugRtt_PutI32(frame, &idx, VisionDebugRtt_ScaleI32(vision_debug.actual_pitch_rad, 1000000.0f));
+    if (ins != NULL)
+    {
+        VisionDebugRtt_PutI32(frame, &idx, VisionDebugRtt_ScaleI32(ins->Gyro[0], 1000000.0f));
+        VisionDebugRtt_PutI32(frame, &idx, VisionDebugRtt_ScaleI32(ins->Gyro[1], 1000000.0f));
+        VisionDebugRtt_PutI32(frame, &idx, VisionDebugRtt_ScaleI32(ins->Gyro[2], 1000000.0f));
+        VisionDebugRtt_PutI32(frame, &idx, VisionDebugRtt_ScaleI32(ins->Accel[0], 1000000.0f));
+        VisionDebugRtt_PutI32(frame, &idx, VisionDebugRtt_ScaleI32(ins->Accel[1], 1000000.0f));
+        VisionDebugRtt_PutI32(frame, &idx, VisionDebugRtt_ScaleI32(ins->Accel[2], 1000000.0f));
+        VisionDebugRtt_PutI32(frame, &idx, VisionDebugRtt_ScaleI32(ins->Roll, 1000000.0f));
+        VisionDebugRtt_PutI32(frame, &idx, VisionDebugRtt_ScaleI32(ins->Pitch, 1000000.0f));
+        VisionDebugRtt_PutI32(frame, &idx, VisionDebugRtt_ScaleI32(ins->Yaw, 1000000.0f));
+        VisionDebugRtt_PutI32(frame, &idx, VisionDebugRtt_ScaleI32(ins->YawTotalAngle, 1000000.0f));
+    }
+    else
+    {
+        for (uint8_t i = 0u; i < 10u; ++i)
+        {
+            VisionDebugRtt_PutI32(frame, &idx, 0);
+        }
+    }
+    if (ins != NULL)
+    {
+        VisionDebugRtt_PutI32(frame, &idx, VisionDebugRtt_ScaleI32(ins->YawGyroRaw, 1000000.0f));
+        VisionDebugRtt_PutI32(frame, &idx, VisionDebugRtt_ScaleI32(ins->YawGyroBias, 1000000.0f));
+        VisionDebugRtt_PutI32(frame, &idx, VisionDebugRtt_ScaleI32(ins->YawGyroCorrected, 1000000.0f));
+        VisionDebugRtt_PutU32(frame, &idx, ins->YawGyroBiasSampleCount);
+        VisionDebugRtt_PutU8(frame, &idx, ins->YawGyroBiasReady);
+    }
+    else
+    {
+        VisionDebugRtt_PutI32(frame, &idx, 0);
+        VisionDebugRtt_PutI32(frame, &idx, 0);
+        VisionDebugRtt_PutI32(frame, &idx, 0);
+        VisionDebugRtt_PutU32(frame, &idx, 0u);
+        VisionDebugRtt_PutU8(frame, &idx, 0u);
+    }
+    VisionDebugRtt_PutU8(frame, &idx, QEKF_INS.StableFlag);
+    VisionDebugRtt_PutU32(frame, &idx, (uint32_t)QEKF_INS.ErrorCount);
+    VisionDebugRtt_PutI32(frame, &idx, VisionDebugRtt_ScaleI32(QEKF_INS.ChiSquare_Data[0], 1000000.0f));
+    VisionDebugRtt_PutI32(frame, &idx, VisionDebugRtt_ScaleI32(QEKF_INS.GyroBias[0], 1000000.0f));
+    VisionDebugRtt_PutI32(frame, &idx, VisionDebugRtt_ScaleI32(QEKF_INS.GyroBias[1], 1000000.0f));
+    VisionDebugRtt_PutI32(frame, &idx, VisionDebugRtt_ScaleI32(QEKF_INS.GyroBias[2], 1000000.0f));
 
     VisionDebugRtt_PutU8(frame, &idx, robot_cmd_debug.robot_state);
     VisionDebugRtt_PutU8(frame, &idx, robot_cmd_debug.gimbal_ready);
@@ -174,6 +223,14 @@ static uint8_t VisionDebugRtt_BuildFrame(uint8_t *frame, uint16_t frame_len)
     VisionDebugRtt_PutU32(frame, &idx, gm6020_debug.tx_abort_count);
     VisionDebugRtt_PutU32(frame, &idx, gm6020_debug.last_hal_error);
     VisionDebugRtt_PutU32(frame, &idx, gm6020_debug.last_can_error_code);
+    VisionDebugRtt_PutU32(frame, &idx, gm6020_debug.rx_total_count);
+    VisionDebugRtt_PutU32(frame, &idx, gm6020_debug.rx_matched_count);
+    VisionDebugRtt_PutU32(frame, &idx, gm6020_debug.rx_unmatched_count);
+    VisionDebugRtt_PutU16(frame, &idx, gm6020_debug.last_rx_std_id);
+    VisionDebugRtt_PutU16(frame, &idx, gm6020_debug.last_unmatched_rx_std_id);
+    VisionDebugRtt_PutU8(frame, &idx, gm6020_debug.last_rx_dlc);
+    VisionDebugRtt_PutU32(frame, &idx, gm6020_debug.rx_feedback_id_count[1]); // 0x206 yaw
+    VisionDebugRtt_PutU32(frame, &idx, gm6020_debug.rx_feedback_id_count[3]); // 0x208 pitch
 
     VisionDebugRtt_PutMotorSnapshot(frame, &idx, &yaw_snapshot);
     VisionDebugRtt_PutMotorSnapshot(frame, &idx, &pitch_snapshot);

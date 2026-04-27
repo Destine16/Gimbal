@@ -4,6 +4,8 @@
 
 #include "crc16.h"
 #include "daemon.h"
+#include "gm6020.h"
+#include "ins_task.h"
 #include "robot_def.h"
 #include "stm32f4xx_hal.h"
 #include "usbd_cdc_if.h"
@@ -45,6 +47,42 @@ static uint8_t vision_status_frame[VISION_STATUS_FRAME_LEN];
 static DaemonInstance *vision_daemon_instance; // 视觉命令在线监测
 
 volatile VisionDebug_t vision_debug;
+
+static void VisionComm_UpdateCanDebug(void)
+{
+    const INS_t *ins = INS_GetData();
+    GM6020_ControlSnapshot_s yaw_snapshot;
+    GM6020_ControlSnapshot_s pitch_snapshot;
+
+    vision_debug.can_rx_total_count = gm6020_debug.rx_total_count;
+    vision_debug.can_rx_matched_count = gm6020_debug.rx_matched_count;
+    vision_debug.can_rx_unmatched_count = gm6020_debug.rx_unmatched_count;
+    vision_debug.can_rx_0x206_count = gm6020_debug.rx_feedback_id_count[1]; // yaw ID=2 feedback
+    vision_debug.can_rx_0x208_count = gm6020_debug.rx_feedback_id_count[3]; // pitch ID=4 feedback
+    vision_debug.can_last_rx_std_id = gm6020_debug.last_rx_std_id;
+    vision_debug.can_last_unmatched_rx_std_id = gm6020_debug.last_unmatched_rx_std_id;
+    if (ins != NULL)
+    {
+        vision_debug.imu_yaw_gyro_raw_rad_s = ins->YawGyroRaw;
+        vision_debug.imu_yaw_gyro_bias_rad_s = ins->YawGyroBias;
+        vision_debug.imu_yaw_gyro_corrected_rad_s = ins->YawGyroCorrected;
+    }
+
+    if (GM6020_GetControlSnapshot(GIMBAL_YAW_MOTOR_ID, &yaw_snapshot))
+    {
+        vision_debug.yaw_encoder_raw = yaw_snapshot.encoder_raw;
+        vision_debug.yaw_encoder_single_round_rad = yaw_snapshot.encoder_single_round_rad;
+        vision_debug.yaw_encoder_total_angle_rad = yaw_snapshot.encoder_total_angle_rad;
+        vision_debug.yaw_encoder_speed_rad_s = yaw_snapshot.motor_speed_rad_s;
+    }
+    if (GM6020_GetControlSnapshot(GIMBAL_PITCH_MOTOR_ID, &pitch_snapshot))
+    {
+        vision_debug.pitch_encoder_raw = pitch_snapshot.encoder_raw;
+        vision_debug.pitch_encoder_single_round_rad = pitch_snapshot.encoder_single_round_rad;
+        vision_debug.pitch_encoder_total_angle_rad = pitch_snapshot.encoder_total_angle_rad;
+        vision_debug.pitch_encoder_speed_rad_s = pitch_snapshot.motor_speed_rad_s;
+    }
+}
 
 static void VisionComm_DebugCopyBytes(volatile uint8_t *dst, const uint8_t *src, uint8_t len)
 {
@@ -214,6 +252,8 @@ void VisionComm_Task(void)
 {
     uint32_t now_tick = HAL_GetTick();
 
+    VisionComm_UpdateCanDebug();
+
     if (!usb_host_ready)
     {
         return;
@@ -230,6 +270,7 @@ void VisionComm_Task(void)
 
 void VisionComm_RxBytes(const uint8_t *data, uint16_t len)
 {
+    VisionComm_UpdateCanDebug();
     usb_host_ready = 1u;
     vision_debug.usb_rx_packet_count++;
     vision_debug.usb_rx_byte_count += len;
@@ -273,6 +314,7 @@ uint8_t VisionComm_GetVisionCmd(VisionCmd_t *cmd)
 
 void VisionComm_UpdateStatus(const VisionStatus_t *status)
 {
+    VisionComm_UpdateCanDebug();
     memcpy(&latest_vision_status, status, sizeof(latest_vision_status));
     vision_debug.actual_yaw_1e4rad = status->yaw_actual_1e4rad;
     vision_debug.actual_pitch_1e4rad = status->pitch_actual_1e4rad;

@@ -43,6 +43,7 @@ static uint32_t last_robot_cmd_tick_ms;
 static uint32_t last_target_valid_tick_ms;
 static uint32_t target_lost_enter_tick_ms;
 static uint32_t stall_recovery_end_tick_ms;
+static uint32_t not_ready_enter_tick_ms;
 static uint32_t yaw_stall_start_tick_ms;
 static uint32_t pitch_stall_start_tick_ms;
 static float scan_yaw_center_rad;
@@ -85,21 +86,6 @@ static float SignF(float value)
     return (value >= 0.0f) ? 1.0f : -1.0f;
 }
 
-static float LimitStep(float current, float min_value, float max_value, float *dir)
-{
-    if (current > max_value)
-    {
-        current = max_value;
-        *dir = -1.0f;
-    }
-    else if (current < min_value)
-    {
-        current = min_value;
-        *dir = 1.0f;
-    }
-    return current;
-}
-
 static void SentryResetStallTimers(void)
 {
     yaw_stall_start_tick_ms = 0u;
@@ -122,6 +108,22 @@ static void SentryEnterScan(float current_yaw, float current_pitch)
     vision_target_valid = 0u;
 }
 
+#if SENTRY_SCAN_ENABLE
+static float LimitStep(float current, float min_value, float max_value, float *dir)
+{
+    if (current > max_value)
+    {
+        current = max_value;
+        *dir = -1.0f;
+    }
+    else if (current < min_value)
+    {
+        current = min_value;
+        *dir = 1.0f;
+    }
+    return current;
+}
+
 static void SentryUpdateScan(float dt_s)
 {
     const float yaw_min = scan_yaw_center_rad - SENTRY_SCAN_YAW_RANGE_RAD;
@@ -138,6 +140,7 @@ static void SentryUpdateScan(float dt_s)
     scan_yaw_target_rad = LimitStep(scan_yaw_target_rad, yaw_min, yaw_max, &scan_yaw_dir);
     scan_pitch_target_rad = LimitStep(scan_pitch_target_rad, pitch_min, pitch_max, &scan_pitch_dir);
 }
+#endif
 
 static uint8_t SentryAxisStallDetected(const GM6020_ControlSnapshot_s *snapshot,
                                        uint32_t now_tick,
@@ -262,6 +265,7 @@ void RobotCMDInit(void)
     last_target_valid_tick_ms = 0u;
     target_lost_enter_tick_ms = 0u;
     stall_recovery_end_tick_ms = 0u;
+    not_ready_enter_tick_ms = 0u;
     SentryResetStallTimers();
     scan_yaw_center_rad = 0.0f;
     scan_pitch_center_rad = 0.0f;
@@ -326,16 +330,49 @@ void RobotCMDTask(void)
     if ((robot_state == ROBOT_STOP) || !gimbal_ready)
     {
         gimbal_cmd_send.gimbal_mode = GIMBAL_ZERO_FORCE;
-        gimbal_cmd_send.yaw = 0.0f;
-        gimbal_cmd_send.pitch = 0.0f;
-        SentryEnterScan(current_yaw_rad, current_pitch_rad);
-        stall_axis = SENTRY_STALL_AXIS_NONE;
-        stall_recovery_end_tick_ms = 0u;
-        SentryResetStallTimers();
+        if (robot_state == ROBOT_STOP)
+        {
+            not_ready_enter_tick_ms = 0u;
+            gimbal_cmd_send.yaw = current_yaw_rad;
+            gimbal_cmd_send.pitch = current_pitch_rad;
+            SentryEnterScan(current_yaw_rad, current_pitch_rad);
+            stall_axis = SENTRY_STALL_AXIS_NONE;
+            stall_recovery_end_tick_ms = 0u;
+            SentryResetStallTimers();
+        }
+        else
+        {
+            if (not_ready_enter_tick_ms == 0u)
+            {
+                not_ready_enter_tick_ms = now_tick;
+            }
+            if ((now_tick - not_ready_enter_tick_ms) >= SENTRY_READY_LOSS_RESET_MS)
+            {
+                gimbal_cmd_send.yaw = current_yaw_rad;
+                gimbal_cmd_send.pitch = current_pitch_rad;
+                SentryEnterScan(current_yaw_rad, current_pitch_rad);
+                stall_axis = SENTRY_STALL_AXIS_NONE;
+                stall_recovery_end_tick_ms = 0u;
+                SentryResetStallTimers();
+            }
+        }
     }
-#if GIMBAL_SYSID_MODE != GIMBAL_SYSID_NONE
+#if IMU_MOUNT_CALIBRATION_ENABLE
     else
     {
+        not_ready_enter_tick_ms = 0u;
+        gimbal_cmd_send.gimbal_mode = GIMBAL_ZERO_FORCE;
+        gimbal_cmd_send.yaw = current_yaw_rad;
+        gimbal_cmd_send.pitch = current_pitch_rad;
+        vision_target_valid = 0u;
+        sentry_state = SENTRY_STATE_SCAN;
+        stall_axis = SENTRY_STALL_AXIS_NONE;
+        SentryResetStallTimers();
+    }
+#elif GIMBAL_SYSID_MODE != GIMBAL_SYSID_NONE
+    else
+    {
+        not_ready_enter_tick_ms = 0u;
         if (!GimbalSysId_Update(&gimbal_fetch_data, &gimbal_cmd_send))
         {
             gimbal_cmd_send.gimbal_mode = GIMBAL_IMU_MODE;
@@ -348,6 +385,7 @@ void RobotCMDTask(void)
 #else
     else
     {
+        not_ready_enter_tick_ms = 0u;
         if (sentry_state != SENTRY_STATE_STALL_RECOVERY)
         {
             vision_cmd_ready = VisionComm_GetVisionCmd(&vision_cmd);
@@ -424,9 +462,16 @@ void RobotCMDTask(void)
         }
         else if (sentry_state == SENTRY_STATE_SCAN)
         {
+#if SENTRY_SCAN_ENABLE
             SentryUpdateScan(dt_s);
             gimbal_cmd_send.yaw = scan_yaw_target_rad;
             gimbal_cmd_send.pitch = scan_pitch_target_rad;
+#else
+            scan_yaw_target_rad = current_yaw_rad;
+            scan_pitch_target_rad = current_pitch_rad;
+            gimbal_cmd_send.yaw = current_yaw_rad;
+            gimbal_cmd_send.pitch = current_pitch_rad;
+#endif
         }
     }
 #endif

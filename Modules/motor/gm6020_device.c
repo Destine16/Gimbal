@@ -162,6 +162,10 @@ uint8_t GM6020_GetControlSnapshot(uint8_t motor_id, GM6020_ControlSnapshot_s *sn
         snapshot->output_ff_raw = motor->output_ff_raw;
         snapshot->output_cmd = motor->output_cmd;
         snapshot->real_current = motor->measure.real_current;
+        snapshot->encoder_raw = motor->measure.ecd;
+        snapshot->encoder_total_round = motor->measure.total_round;
+        snapshot->encoder_single_round_rad = motor->measure.angle_single_round_rad;
+        snapshot->encoder_total_angle_rad = motor->measure.total_angle_rad;
         snapshot->motor_speed_rad_s = motor->measure.speed_rad_s;
         snapshot->angle_pid_pout = motor->angle_pid.Pout;
         snapshot->angle_pid_iout = motor->angle_pid.Iout;

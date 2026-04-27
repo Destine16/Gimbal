@@ -71,6 +71,32 @@ static void GM6020_DebugUpdateCanState(CAN_HandleTypeDef *hcan)
     gm6020_debug.last_can_tsr = hcan->Instance->TSR;
 }
 
+static void GM6020_DebugRecordRx(const CAN_RxHeaderTypeDef *rx_header, uint32_t now_tick)
+{
+    uint32_t feedback_index;
+
+    if (rx_header == NULL)
+    {
+        return;
+    }
+
+    gm6020_debug.rx_total_count++;
+    gm6020_debug.last_rx_tick_ms = now_tick;
+    gm6020_debug.last_rx_std_id = (uint16_t)rx_header->StdId;
+    gm6020_debug.last_rx_dlc = rx_header->DLC;
+
+    if ((rx_header->IDE == CAN_ID_STD) &&
+        (rx_header->StdId >= 0x205u) &&
+        (rx_header->StdId <= 0x20Cu))
+    {
+        feedback_index = rx_header->StdId - 0x205u;
+        if (feedback_index < GM6020_MAX_NUM)
+        {
+            gm6020_debug.rx_feedback_id_count[feedback_index]++;
+        }
+    }
+}
+
 static void GM6020_AbortStaleTx(CAN_HandleTypeDef *hcan)
 {
     if (hcan == NULL)
@@ -240,10 +266,20 @@ void GM6020_RxFifo0Callback(CAN_HandleTypeDef *hcan)
 {
     CAN_RxHeaderTypeDef rx_header;
     uint8_t rx_data[8];
+    uint8_t matched;
+    uint32_t now_tick;
 
     while (HAL_CAN_GetRxFifoFillLevel(hcan, CAN_RX_FIFO0) > 0u)
     {
-        HAL_CAN_GetRxMessage(hcan, CAN_RX_FIFO0, &rx_header, rx_data);
+        if (HAL_CAN_GetRxMessage(hcan, CAN_RX_FIFO0, &rx_header, rx_data) != HAL_OK)
+        {
+            GM6020_DebugUpdateCanState(hcan);
+            break;
+        }
+
+        now_tick = HAL_GetTick();
+        matched = 0u;
+        GM6020_DebugRecordRx(&rx_header, now_tick);
 
         for (uint8_t i = 0; i < gm6020_count; ++i)
         {
@@ -254,8 +290,17 @@ void GM6020_RxFifo0Callback(CAN_HandleTypeDef *hcan)
                 continue;
             }
 
-            GM6020_ParseFeedback(motor, rx_data, HAL_GetTick());
+            GM6020_ParseFeedback(motor, rx_data, now_tick);
+            gm6020_debug.rx_matched_count++;
+            gm6020_debug.last_matched_rx_std_id = (uint16_t)rx_header.StdId;
+            matched = 1u;
             break;
+        }
+
+        if (!matched)
+        {
+            gm6020_debug.rx_unmatched_count++;
+            gm6020_debug.last_unmatched_rx_std_id = (uint16_t)rx_header.StdId;
         }
     }
 }

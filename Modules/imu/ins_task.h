@@ -33,6 +33,11 @@ typedef struct
     // IMU量测值
     float Gyro[3];  // 角速度,单位 rad/s
     float Accel[3]; // 加速度
+    float YawGyroRaw;       // yaw 轴零偏补偿前角速度,单位 rad/s
+    float YawGyroBias;      // yaw 轴静止估计零偏,单位 rad/s
+    float YawGyroCorrected; // yaw 轴零偏补偿后角速度,单位 rad/s
+    uint32_t YawGyroBiasSampleCount;
+    uint8_t YawGyroBiasReady;
     // 位姿
     float Roll;          // unit: rad
     float Pitch;         // unit: rad
