@@ -55,31 +55,44 @@ Application/gimbal/gimbal_params.c
 当前 yaw / pitch PID 参数：
 
 ```text
-angle Kp = 16.4788
-speed Kp = 1318.3296
-speed Ki = 486.4756
-current Kp = 0.8
-current Ki = 100.0
+yaw:
+  angle Kp = 32.0000
+  speed Kp = 2800.0000
+  speed Ki = 650.0000
+
+pitch:
+  angle Kp = 22.0000
+  speed Kp = 2100.0000
+  speed Ki = 300.0000
+  gyro LPF alpha = 0.50
+
+current loop:
+  Kp = 0.8
+  Ki = 100.0
 ```
 
 当前安全限幅：
 
 ```text
-speed_ref_max = 2.0 rad/s
-current_ref_max = 3000 raw
+yaw_speed_ref_max = 4.5 rad/s
+pitch_speed_ref_max = 3.5 rad/s
+current_ref_max = 3800 raw
 voltage_cmd_max = 5000 raw
 ```
 
 pitch 前馈模型：
 
 ```text
-output_ff = A * sin(theta) + C + H * motion_sign
+output_ff = A * sin(theta) + C
 A = -1115.8459
 C = -97.4462
-H = -714.2191
 ```
 
-其中 `motion_sign` 由 pitch 角度环输出的 `speed_ref` 决定，带 `0.10 rad/s` 死区，避免静止噪声反复切换方向。
+当前默认关闭 pitch 滞回/摩擦前馈：
+
+```text
+GIMBAL_PITCH_OUTPUT_HYST_ENABLE = 0
+```
 
 ## 视觉通信
 
@@ -119,10 +132,10 @@ VISION_CONTROL_MODE = 1
 
 哨兵模式行为：
 
-- `target_valid = 0`：电控进入无目标扫描，在当前中心附近做 yaw 左右扫描和 pitch 小幅上下扫描
+- `target_valid = 0`：当前默认保持当前位置；扫描功能保留在代码中，但默认关闭
 - `target_valid = 1`：电控停止扫描，使用视觉 delta 跟踪装甲板
-- 目标短暂丢失时先保持上一目标，超过延时后回到扫描
-- 检测到堵转时清对应轴 PID，并向反方向回退一小段后恢复扫描
+- 目标短暂丢失时先保持上一目标，超过延时后回到无目标保持状态
+- 检测到堵转时清对应轴 PID，并向反方向回退一小段后恢复无目标状态
 
 协议细节见：
 
@@ -235,6 +248,10 @@ GIMBAL_SYSID_MODE=1  yaw PRBS 辨识
 GIMBAL_SYSID_MODE=2  pitch 重力前馈辨识
 GIMBAL_SYSID_MODE=3  yaw 小阶跃验证
 GIMBAL_SYSID_MODE=4  pitch 滞回/摩擦辨识
+GIMBAL_SYSID_MODE=5  yaw 阶跃性能测试
+GIMBAL_SYSID_MODE=6  pitch 阶跃性能测试
+GIMBAL_SYSID_MODE=7  yaw 正弦跟踪性能测试
+GIMBAL_SYSID_MODE=8  pitch 正弦跟踪性能测试
 ```
 
 示例：
@@ -288,4 +305,4 @@ cmake --build --preset Debug
 - pitch 限位没有超过机械限位
 - IMU 方向和云台业务坐标一致
 - USB CDC 设备名选中的是主控板，不是 J-Link
-- pitch 前馈和滞回补偿打开后没有明显跳变
+- pitch 重力前馈已开启，滞回/摩擦前馈默认关闭

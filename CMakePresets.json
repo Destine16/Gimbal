@@ -49,6 +49,50 @@
             }
         },
         {
+            "name": "YawPerfStepSysid",
+            "inherits": "default",
+            "cacheVariables": {
+                "CMAKE_BUILD_TYPE": "Debug",
+                "IMU_ONLY_BRINGUP_ENABLE": "OFF",
+                "GIMBAL_SYSID_MODE": "5",
+                "VISION_DEBUG_RTT_ENABLE": "OFF",
+                "IMU_MOUNT_CALIBRATION_ENABLE": "OFF"
+            }
+        },
+        {
+            "name": "PitchPerfStepSysid",
+            "inherits": "default",
+            "cacheVariables": {
+                "CMAKE_BUILD_TYPE": "Debug",
+                "IMU_ONLY_BRINGUP_ENABLE": "OFF",
+                "GIMBAL_SYSID_MODE": "6",
+                "VISION_DEBUG_RTT_ENABLE": "OFF",
+                "IMU_MOUNT_CALIBRATION_ENABLE": "OFF"
+            }
+        },
+        {
+            "name": "YawPerfSineSysid",
+            "inherits": "default",
+            "cacheVariables": {
+                "CMAKE_BUILD_TYPE": "Debug",
+                "IMU_ONLY_BRINGUP_ENABLE": "OFF",
+                "GIMBAL_SYSID_MODE": "7",
+                "VISION_DEBUG_RTT_ENABLE": "OFF",
+                "IMU_MOUNT_CALIBRATION_ENABLE": "OFF"
+            }
+        },
+        {
+            "name": "PitchPerfSineSysid",
+            "inherits": "default",
+            "cacheVariables": {
+                "CMAKE_BUILD_TYPE": "Debug",
+                "IMU_ONLY_BRINGUP_ENABLE": "OFF",
+                "GIMBAL_SYSID_MODE": "8",
+                "VISION_DEBUG_RTT_ENABLE": "OFF",
+                "IMU_MOUNT_CALIBRATION_ENABLE": "OFF"
+            }
+        },
+        {
             "name": "VisionDebugRtt",
             "inherits": "default",
             "cacheVariables": {
@@ -77,6 +121,22 @@
         {
             "name": "YawStepSysid",
             "configurePreset": "YawStepSysid"
+        },
+        {
+            "name": "YawPerfStepSysid",
+            "configurePreset": "YawPerfStepSysid"
+        },
+        {
+            "name": "PitchPerfStepSysid",
+            "configurePreset": "PitchPerfStepSysid"
+        },
+        {
+            "name": "YawPerfSineSysid",
+            "configurePreset": "YawPerfSineSysid"
+        },
+        {
+            "name": "PitchPerfSineSysid",
+            "configurePreset": "PitchPerfSineSysid"
         },
         {
             "name": "VisionDebugRtt",

@@ -2,7 +2,7 @@
 
 #include <math.h>
 
-#define GM6020_OUTPUT_FF_HYST_SPEED_REF_DEADBAND_RAD_S 0.10f
+#define GM6020_OUTPUT_FF_HYST_TRANSITION_RAD_S 0.50f
 
 static void GM6020_ResetPIDState(PIDInstance *pid)
 {
@@ -45,6 +45,11 @@ static int16_t GM6020_OutputClamp(float command, float max_output_raw)
         return (int16_t)(-max_output_raw);
     }
     return (int16_t)command;
+}
+
+static float GM6020_SmoothFrictionSign(float speed_ref_rad_s)
+{
+    return tanhf(speed_ref_rad_s / GM6020_OUTPUT_FF_HYST_TRANSITION_RAD_S);
 }
 
 void GM6020_ResetControlState(GM6020_Instance *motor)
@@ -105,13 +110,13 @@ static void GM6020_ControlStep(GM6020_Instance *motor, uint32_t now_tick)
     speed_ref = PIDCalculate(&motor->angle_pid, angle_feedback, angle_ref);
     current_ref = PIDCalculate(&motor->speed_pid, speed_feedback, speed_ref);
     voltage_ref = PIDCalculate(&motor->current_pid, current_feedback, current_ref);
-    if (speed_ref > GM6020_OUTPUT_FF_HYST_SPEED_REF_DEADBAND_RAD_S)
+    if (motor->output_ff_hyst_raw != 0.0f)
     {
-        motor->output_ff_motion_sign = 1.0f;
+        motor->output_ff_motion_sign = GM6020_SmoothFrictionSign(speed_ref);
     }
-    else if (speed_ref < -GM6020_OUTPUT_FF_HYST_SPEED_REF_DEADBAND_RAD_S)
+    else
     {
-        motor->output_ff_motion_sign = -1.0f;
+        motor->output_ff_motion_sign = 0.0f;
     }
     output_ff_raw = motor->output_ff_sin_raw * sinf(angle_feedback) +
                     motor->output_ff_offset_raw +

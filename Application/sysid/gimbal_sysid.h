@@ -13,6 +13,7 @@ typedef enum
     GIMBAL_SYSID_PHASE_RETURN,
     GIMBAL_SYSID_PHASE_DONE,
     GIMBAL_SYSID_PHASE_STEP,
+    GIMBAL_SYSID_PHASE_SINE,
 } GimbalSysIdPhase_e;
 
 typedef struct

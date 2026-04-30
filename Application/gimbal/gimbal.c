@@ -16,6 +16,8 @@
 #define GIMBAL_PITCH_ONLY_TEST_ENABLE 0
 #endif
 
+#define GIMBAL_PITCH_GYRO_LPF_ALPHA 0.50f
+
 static Publisher_t *gimbal_pub;   // 发布云台反馈数据到 gimbal_feed
 static Subscriber_t *gimbal_sub;  // 订阅 robot_cmd 发来的 gimbal_cmd
 
@@ -32,6 +34,8 @@ static float yaw_zero_offset_rad;              // yaw 业务零点: 首次 IMU �
 static uint8_t yaw_zero_locked;                // yaw 零点是否已锁定
 static float pitch_zero_offset_rad;            // pitch 业务零点: 首次 IMU 在线时锁定
 static uint8_t pitch_zero_locked;              // pitch 零点是否已锁定
+static float pitch_speed_feedback_lpf;
+static uint8_t pitch_speed_feedback_lpf_ready;
 
 static float ClampMotorTarget(float target, const GimbalMotorParam_s *param)
 {
@@ -58,6 +62,8 @@ void GimbalInit(void)
     yaw_zero_locked = 0u;
     pitch_zero_offset_rad = 0.0f;
     pitch_zero_locked = 0u;
+    pitch_speed_feedback_lpf = 0.0f;
+    pitch_speed_feedback_lpf_ready = 0u;
 
     // gimbal 模块: 发布 gimbal_feed,订阅 gimbal_cmd
     gimbal_pub = PubRegister("gimbal_feed", sizeof(Gimbal_Upload_Data_s));
@@ -142,11 +148,27 @@ void GimbalTask(void)
                 pitch_zero_locked = 1u;
             }
             pitch_angle_zeroed_rad = pitch_angle_raw_rad - pitch_zero_offset_rad;
+            pitch_speed_feedback = GimbalPitchParam.speed_feedback_sign * gimbal_ins->Gyro[0];
+            if (!pitch_speed_feedback_lpf_ready)
+            {
+                pitch_speed_feedback_lpf = pitch_speed_feedback;
+                pitch_speed_feedback_lpf_ready = 1u;
+            }
+            else
+            {
+                pitch_speed_feedback_lpf += GIMBAL_PITCH_GYRO_LPF_ALPHA *
+                                            (pitch_speed_feedback - pitch_speed_feedback_lpf);
+            }
+            pitch_speed_feedback = pitch_speed_feedback_lpf;
+        }
+        else
+        {
+            pitch_speed_feedback_lpf = 0.0f;
+            pitch_speed_feedback_lpf_ready = 0u;
         }
         yaw_angle_feedback_rad = GimbalYawParam.angle_feedback_sign * yaw_total_angle_zeroed_rad;
         yaw_speed_feedback = GimbalYawParam.speed_feedback_sign * gimbal_ins->Gyro[2];
         pitch_angle_feedback_rad = pitch_angle_zeroed_rad;
-        pitch_speed_feedback = GimbalPitchParam.speed_feedback_sign * gimbal_ins->Gyro[0];
     }
 
     switch (gimbal_cmd_recv.gimbal_mode)
