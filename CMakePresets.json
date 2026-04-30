@@ -25,6 +25,40 @@
                 "CMAKE_BUILD_TYPE": "Release",
                 "IMU_ONLY_BRINGUP_ENABLE": "OFF"
             }
+        },
+        {
+            "name": "YawPrbsSysid",
+            "inherits": "default",
+            "cacheVariables": {
+                "CMAKE_BUILD_TYPE": "Debug",
+                "IMU_ONLY_BRINGUP_ENABLE": "OFF",
+                "GIMBAL_SYSID_MODE": "1",
+                "VISION_DEBUG_RTT_ENABLE": "OFF",
+                "IMU_MOUNT_CALIBRATION_ENABLE": "OFF"
+            }
+        },
+        {
+            "name": "YawStepSysid",
+            "inherits": "default",
+            "cacheVariables": {
+                "CMAKE_BUILD_TYPE": "Debug",
+                "IMU_ONLY_BRINGUP_ENABLE": "OFF",
+                "GIMBAL_SYSID_MODE": "3",
+                "VISION_DEBUG_RTT_ENABLE": "OFF",
+                "IMU_MOUNT_CALIBRATION_ENABLE": "OFF"
+            }
+        },
+        {
+            "name": "VisionDebugRtt",
+            "inherits": "default",
+            "cacheVariables": {
+                "CMAKE_BUILD_TYPE": "Debug",
+                "IMU_ONLY_BRINGUP_ENABLE": "OFF",
+                "GIMBAL_SYSID_MODE": "0",
+                "VISION_CONTROL_MODE": "1",
+                "VISION_DEBUG_RTT_ENABLE": "ON",
+                "IMU_MOUNT_CALIBRATION_ENABLE": "OFF"
+            }
         }
     ],
     "buildPresets": [
@@ -35,6 +69,18 @@
         {
             "name": "Release",
             "configurePreset": "Release"
+        },
+        {
+            "name": "YawPrbsSysid",
+            "configurePreset": "YawPrbsSysid"
+        },
+        {
+            "name": "YawStepSysid",
+            "configurePreset": "YawStepSysid"
+        },
+        {
+            "name": "VisionDebugRtt",
+            "configurePreset": "VisionDebugRtt"
         }
     ]
 }

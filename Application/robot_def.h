@@ -64,13 +64,13 @@
 #define VISION_DEBUG_RTT_TX_PERIOD_MS 20u
 
 // 哨兵模式参数。无目标时自动扫描; 有目标时使用视觉 delta 跟踪。
-#define SENTRY_SCAN_ENABLE               0u
+#define SENTRY_SCAN_ENABLE               1u
 #define SENTRY_SCAN_YAW_RANGE_RAD        0.78539816f  // +/-45 deg
 #define SENTRY_SCAN_PITCH_RANGE_RAD      0.61086524f  // +/-35 deg
-#define SENTRY_SCAN_YAW_SPEED_RAD_S      1.04719755f  // 60 deg/s
-#define SENTRY_SCAN_PITCH_SPEED_RAD_S    0.52359878f  // 30 deg/s
-#define SENTRY_TARGET_LOST_HOLD_MS       150u
-#define SENTRY_TARGET_LOST_TO_SCAN_MS    300u
+#define SENTRY_SCAN_YAW_SPEED_RAD_S      1.74532925f  // 100 deg/s
+#define SENTRY_SCAN_PITCH_SPEED_RAD_S    1.04719755f  // 60 deg/s
+#define SENTRY_TARGET_LOST_HOLD_MS       500u
+#define SENTRY_TARGET_LOST_TO_SCAN_MS    0u
 #define SENTRY_READY_LOSS_RESET_MS       200u
 
 // 堵转检测: 输出接近 bring-up 限幅、速度很低、角度误差仍较大并持续一段时间。

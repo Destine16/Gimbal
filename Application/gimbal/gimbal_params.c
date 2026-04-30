@@ -2,12 +2,12 @@
 #include "general_def.h"
 #include "gm6020.h"
 
-#define GM6020_YAW_VOLTAGE_ANGLE_KP          16.4788f
-#define GM6020_YAW_VOLTAGE_SPEED_KP          1318.3296f
-#define GM6020_YAW_VOLTAGE_SPEED_KI          486.4756f
-#define GM6020_PITCH_VOLTAGE_ANGLE_KP        16.4788f
-#define GM6020_PITCH_VOLTAGE_SPEED_KP        1318.3296f
-#define GM6020_PITCH_VOLTAGE_SPEED_KI        486.4756f
+#define GM6020_YAW_VOLTAGE_ANGLE_KP          19.5964f
+#define GM6020_YAW_VOLTAGE_SPEED_KP          1794.9709f
+#define GM6020_YAW_VOLTAGE_SPEED_KI          276.8388f
+#define GM6020_PITCH_VOLTAGE_ANGLE_KP        19.5964f
+#define GM6020_PITCH_VOLTAGE_SPEED_KP        1794.9709f
+#define GM6020_PITCH_VOLTAGE_SPEED_KI        276.8388f
 #define GM6020_OLD_VOLTAGE_CURRENT_KP        0.8f
 #define GM6020_OLD_VOLTAGE_CURRENT_KI        100.0f
 
@@ -39,7 +39,8 @@
 #endif
 
 // Bring-up 安全限幅: 低于 GM6020 说明书硬规格,确认方向和闭环正常后再逐步放开。
-#define GIMBAL_BRINGUP_SPEED_REF_MAX_RAD_S       2.0f
+#define GIMBAL_YAW_SPEED_REF_MAX_RAD_S           3.0f
+#define GIMBAL_PITCH_SPEED_REF_MAX_RAD_S         3.0f
 #define GIMBAL_BRINGUP_TORQUE_CURRENT_MAX_RAW    3000.0f
 #define GIMBAL_BRINGUP_VOLTAGE_CMD_MAX_RAW       5000.0f
 
@@ -60,7 +61,7 @@ const GimbalMotorParam_s GimbalYawParam = {
         .Kp = GM6020_YAW_VOLTAGE_ANGLE_KP,
         .Ki = 0.0f,
         .Kd = 0.0f,
-        .MaxOut = GIMBAL_BRINGUP_SPEED_REF_MAX_RAD_S,
+        .MaxOut = GIMBAL_YAW_SPEED_REF_MAX_RAD_S,
         .DeadBand = 0.0f,
         .Improve = PID_IMPROVE_NONE,
         .IntegralLimit = 0.0f,
@@ -100,7 +101,7 @@ const GimbalMotorParam_s GimbalPitchParam = {
         .Kp = GM6020_PITCH_VOLTAGE_ANGLE_KP,
         .Ki = 0.0f,
         .Kd = 0.0f,
-        .MaxOut = GIMBAL_BRINGUP_SPEED_REF_MAX_RAD_S,
+        .MaxOut = GIMBAL_PITCH_SPEED_REF_MAX_RAD_S,
         .Improve = PID_IMPROVE_NONE,
         .IntegralLimit = 0.0f,
     },
