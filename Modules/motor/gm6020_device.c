@@ -70,7 +70,10 @@ GM6020_Instance *GM6020_Init(const GM6020_Init_Config_s *config)
     motor->max_output_raw = config->max_output_raw;
     motor->output_ff_sin_raw = config->output_ff_sin_raw;
     motor->output_ff_offset_raw = config->output_ff_offset_raw;
+    motor->output_ff_speed_raw = config->output_ff_speed_raw;
+    motor->output_ff_speed_max_raw = config->output_ff_speed_max_raw;
     motor->output_ff_hyst_raw = config->output_ff_hyst_raw;
+    motor->output_ff_hyst_transition_rad_s = config->output_ff_hyst_transition_rad_s;
     motor->output_ff_motion_sign = 0.0f;
     if ((motor->max_output_raw <= 0.0f) || (motor->max_output_raw > GM6020_VOLTAGE_CMD_MAX_RAW))
     {

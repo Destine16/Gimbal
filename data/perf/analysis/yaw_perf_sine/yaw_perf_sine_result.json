@@ -1,0 +1,13 @@
+{
+  "input_csv": "data/perf/yaw_perf_sine.csv",
+  "axis": "yaw",
+  "mode": 7,
+  "output_dir": "data/perf/analysis/yaw_perf_sine",
+  "metrics_csv": "data/perf/analysis/yaw_perf_sine/yaw_perf_sine_metrics.csv",
+  "table_md": "data/perf/analysis/yaw_perf_sine/yaw_perf_sine_table.md",
+  "plot_paths": [
+    "data/perf/analysis/yaw_perf_sine/sine_A5deg_T1s.png",
+    "data/perf/analysis/yaw_perf_sine/sine_A20deg_T2s.png"
+  ],
+  "case_count": 2
+}

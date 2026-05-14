@@ -1,0 +1,15 @@
+{
+  "input_csv": "data/perf/yaw_perf_step.csv",
+  "axis": "yaw",
+  "mode": 5,
+  "output_dir": "data/perf/analysis/yaw_perf_step",
+  "metrics_csv": "data/perf/analysis/yaw_perf_step/yaw_perf_step_metrics.csv",
+  "table_md": "data/perf/analysis/yaw_perf_step/yaw_perf_step_table.md",
+  "plot_paths": [
+    "data/perf/analysis/yaw_perf_step/step_p3deg.png",
+    "data/perf/analysis/yaw_perf_step/step_p5deg.png",
+    "data/perf/analysis/yaw_perf_step/step_p10deg.png",
+    "data/perf/analysis/yaw_perf_step/step_p20deg.png"
+  ],
+  "missing_targets_deg": []
+}

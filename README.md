@@ -14,7 +14,7 @@
 - pitch 电机 ID：`4`
 - 视觉链路：`USB CDC`
 - 控制模式：IMU 角度反馈 + IMU 角速度反馈
-- 系统辨识：支持 RTT 采集 yaw PRBS、yaw step、pitch 前馈、pitch 滞回数据
+- 系统辨识：支持 RTT 采集 yaw / pitch PRBS、fast multisine、阶跃、正弦、pitch 前馈和 pitch 滞回数据
 
 ## 坐标与方向约定
 
@@ -56,14 +56,14 @@ Application/gimbal/gimbal_params.c
 
 ```text
 yaw:
-  angle Kp = 32.0000
-  speed Kp = 2800.0000
-  speed Ki = 650.0000
+  angle Kp = 48.0000
+  speed Kp = 3600.0000
+  speed Ki = 600.0000
 
 pitch:
-  angle Kp = 22.0000
-  speed Kp = 2100.0000
-  speed Ki = 300.0000
+  angle Kp = 28.0000
+  speed Kp = 2800.0000
+  speed Ki = 420.0000
   gyro LPF alpha = 0.50
 
 current loop:
@@ -74,8 +74,8 @@ current loop:
 当前安全限幅：
 
 ```text
-yaw_speed_ref_max = 4.5 rad/s
-pitch_speed_ref_max = 3.5 rad/s
+yaw_speed_ref_max = 4.8 rad/s
+pitch_speed_ref_max = 3.6 rad/s
 current_ref_max = 3800 raw
 voltage_cmd_max = 5000 raw
 ```
@@ -92,6 +92,15 @@ C = -97.4462
 
 ```text
 GIMBAL_PITCH_OUTPUT_HYST_ENABLE = 0
+GIMBAL_PITCH_OUTPUT_SPEED_ENABLE = 0
+```
+
+当前性能数据和曲线见：
+
+```text
+Documents/gimbal_performance_report.md
+Documents/feishu_gimbal_report_current.md
+data/perf/analysis/
 ```
 
 ## 视觉通信
@@ -170,6 +179,9 @@ host_tools/
   vision_debug_rtt_capture.py     SEGGER RTT 普通视觉链路调试采集工具
   analyze_*_sysid.py              系统辨识分析脚本
   optimize_yaw_pid_model.py       yaw PID 模型优化脚本
+  analyze_fast_sysid.py           yaw / pitch 快响应辨识评分脚本
+  optimize_fast_pid_model.py      yaw / pitch 快响应 PID 模型优化脚本
+  compare_fast_pid_results.py     快响应 PID 对比报告生成脚本
 ```
 
 ## 编译
@@ -252,6 +264,10 @@ GIMBAL_SYSID_MODE=5  yaw 阶跃性能测试
 GIMBAL_SYSID_MODE=6  pitch 阶跃性能测试
 GIMBAL_SYSID_MODE=7  yaw 正弦跟踪性能测试
 GIMBAL_SYSID_MODE=8  pitch 正弦跟踪性能测试
+GIMBAL_SYSID_MODE=9  pitch PRBS 辨识
+GIMBAL_SYSID_MODE=10 yaw fast multisine 快响应辨识
+GIMBAL_SYSID_MODE=11 pitch fast multisine 快响应辨识
+GIMBAL_SYSID_MODE=12 pitch 低速匀速前馈辨识
 ```
 
 示例：
@@ -266,6 +282,77 @@ RTT 采集示例：
 ```bash
 .venv-host/bin/python host_tools/gimbal_sysid_rtt_capture.py --duration 123 --kill-conflicts \
   --output data/sysid/pitch_hyst_rtt_$(date +%Y%m%d_%H%M%S).csv
+```
+
+快响应辨识推荐使用 preset：
+
+```bash
+cmake --preset YawFastMultisineSysid
+cmake --build --preset YawFastMultisineSysid
+
+cmake --preset PitchFastMultisineSysid
+cmake --build --preset PitchFastMultisineSysid
+```
+
+采集 yaw fast multisine：
+
+```bash
+.venv-host/bin/python host_tools/gimbal_sysid_rtt_capture.py --duration 55 --kill-conflicts \
+  --elf build/YawFastMultisineSysid/Gimbal.elf \
+  --output data/sysid/yaw_fast_multisine_$(date +%Y%m%d_%H%M%S).csv
+```
+
+采集 pitch fast multisine：
+
+```bash
+.venv-host/bin/python host_tools/gimbal_sysid_rtt_capture.py --duration 55 --kill-conflicts \
+  --elf build/PitchFastMultisineSysid/Gimbal.elf \
+  --output data/sysid/pitch_fast_multisine_$(date +%Y%m%d_%H%M%S).csv
+```
+
+采集 pitch 低速匀速前馈 sweep：
+
+```bash
+cmake --preset PitchFeedforwardSweepSysid
+cmake --build --preset PitchFeedforwardSweepSysid
+
+.venv-host/bin/python host_tools/gimbal_sysid_rtt_capture.py --duration 55 --kill-conflicts \
+  --elf build/PitchFeedforwardSweepSysid/Gimbal.elf \
+  --output data/sysid/pitch_ff_sweep_$(date +%Y%m%d_%H%M%S).csv
+
+.venv-host/bin/python host_tools/analyze_pitch_ff_sweep.py \
+  data/sysid/pitch_ff_sweep_YYYYMMDD_HHMMSS.csv
+```
+
+这个实验用于拟合 `A*sin(theta)+C+Fc*tanh(v/v0)+Bv*v`，比直接用 fast multisine 闭环残差拟合速度前馈更适合 pitch 物理前馈。
+
+分析快响应数据：
+
+```bash
+.venv-host/bin/python host_tools/analyze_fast_sysid.py data/sysid/yaw_fast_multisine_YYYYMMDD_HHMMSS.csv
+```
+
+基于模型优化 yaw PID：
+
+```bash
+.venv-host/bin/python host_tools/optimize_fast_pid_model.py data/sysid/yaw_fast_multisine_YYYYMMDD_HHMMSS.csv \
+  --current-angle-kp 48 --current-speed-kp 3600 --current-speed-ki 600 --speed-ref-limit 4.8
+```
+
+基于模型优化 pitch PID：
+
+```bash
+.venv-host/bin/python host_tools/optimize_fast_pid_model.py data/sysid/pitch_fast_multisine_YYYYMMDD_HHMMSS.csv \
+  --current-angle-kp 28 --current-speed-kp 2800 --current-speed-ki 420 --speed-ref-limit 3.6
+```
+
+生成对比报告：
+
+```bash
+.venv-host/bin/python host_tools/compare_fast_pid_results.py \
+  --baseline-analysis data/sysid/analysis/BASELINE_DIR/yaw_fast_multisine_fast_result.json \
+  --optimization data/sysid/analysis/OPT_DIR/yaw_fast_multisine_fast_pid_result.json \
+  --output data/sysid/analysis/yaw_fast_pid_compare.md
 ```
 
 普通视觉链路 RTT 调试采集示例：
@@ -286,6 +373,8 @@ cmake --build --preset Debug
 ## 实验文档
 
 - [yaw PRBS 与 PID 优化](docs/control/yaw_prbs_sysid_experiment.md)
+- [yaw / pitch 快响应系统辨识与 PID 优化](docs/control/fast_pid_sysid_workflow.md)
+- [云台性能测试报告](Documents/gimbal_performance_report.md)
 - [pitch 重力前馈辨识](docs/control/pitch_feedforward_sysid_experiment.md)
 - [pitch 滞回/摩擦辨识](docs/control/pitch_hysteresis_sysid_experiment.md)
 - [视觉 USB CDC 通信协议](docs/protocol/vision_usb_cdc_protocol.md)
