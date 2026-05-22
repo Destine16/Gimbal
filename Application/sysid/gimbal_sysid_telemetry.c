@@ -43,7 +43,8 @@ static int32_t GimbalSysIdTelemetry_ScaleI32(float value, float scale)
     (GIMBAL_SYSID_MODE == GIMBAL_SYSID_PITCH_PERF_SINE) || \
     (GIMBAL_SYSID_MODE == GIMBAL_SYSID_PITCH_PRBS) || \
     (GIMBAL_SYSID_MODE == GIMBAL_SYSID_PITCH_FAST_MULTISINE) || \
-    (GIMBAL_SYSID_MODE == GIMBAL_SYSID_PITCH_FF_SWEEP)
+    (GIMBAL_SYSID_MODE == GIMBAL_SYSID_PITCH_FF_SWEEP) || \
+    (GIMBAL_SYSID_MODE == GIMBAL_SYSID_PITCH_STATIC_FF_MAP)
 static uint8_t GimbalSysIdTelemetry_GetSnapshot(GM6020_ControlSnapshot_s *snapshot)
 {
     return GM6020_GetControlSnapshot(GIMBAL_PITCH_MOTOR_ID, snapshot);

@@ -27,6 +27,9 @@
 #define GIMBAL_SYSID_FAST_MULTISINE_RETURN_MS   5000u
 #define GIMBAL_SYSID_PITCH_FF_SWEEP_BASELINE_MS 3000u
 #define GIMBAL_SYSID_PITCH_FF_SWEEP_RETURN_MS   4000u
+#define GIMBAL_SYSID_PITCH_STATIC_MAP_BASELINE_MS 3000u
+#define GIMBAL_SYSID_PITCH_STATIC_MAP_STAGE_MS    3500u
+#define GIMBAL_SYSID_PITCH_STATIC_MAP_RETURN_MS   4000u
 #define GIMBAL_SYSID_TOTAL_MS \
     (GIMBAL_SYSID_BASELINE_MS + GIMBAL_SYSID_PRBS_MS + GIMBAL_SYSID_RETURN_MS)
 #define GIMBAL_SYSID_PRBS_SEED   0x4C6F6755u
@@ -187,6 +190,43 @@ static const GimbalSysIdSweepSegment_s pitch_ff_sweep_segments[] = {
 };
 #endif
 
+#if GIMBAL_SYSID_MODE == GIMBAL_SYSID_PITCH_STATIC_FF_MAP
+static const float pitch_static_ff_map_offsets_rad[] = {
+    0.0f,
+    -0.66322512f, // -38 deg anchor
+    -0.61086524f, // -35 deg, upward approach
+    -0.43633231f, // -25 deg
+    -0.26179939f, // -15 deg
+    -0.13962634f, // -8 deg
+    0.0f,
+    0.13962634f,  // +8 deg
+    0.26179939f,  // +15 deg
+    0.43633231f,  // +25 deg
+    0.61086524f,  // +35 deg
+    0.66322512f,  // +38 deg anchor
+    0.61086524f,  // +35 deg, downward approach
+    0.43633231f,  // +25 deg
+    0.26179939f,  // +15 deg
+    0.13962634f,  // +8 deg
+    0.0f,
+    -0.13962634f, // -8 deg
+    -0.26179939f, // -15 deg
+    -0.43633231f, // -25 deg
+    -0.61086524f, // -35 deg
+    -0.66322512f, // -38 deg anchor
+    -0.61086524f, // -35 deg, upward verification
+    -0.43633231f, // -25 deg
+    -0.26179939f, // -15 deg
+    -0.13962634f, // -8 deg
+    0.0f,
+    0.13962634f,  // +8 deg
+    0.26179939f,  // +15 deg
+    0.43633231f,  // +25 deg
+    0.61086524f,  // +35 deg
+    0.0f,
+};
+#endif
+
 #if GIMBAL_SYSID_MODE == GIMBAL_SYSID_PITCH_FF
 static const float pitch_ff_offsets_rad[] = {
     0.0f,
@@ -311,7 +351,8 @@ static uint8_t GimbalSysId_NextOffsetIndex(void)
     (GIMBAL_SYSID_MODE == GIMBAL_SYSID_PITCH_PERF_SINE) || \
     (GIMBAL_SYSID_MODE == GIMBAL_SYSID_PITCH_PRBS) || \
     (GIMBAL_SYSID_MODE == GIMBAL_SYSID_PITCH_FAST_MULTISINE) || \
-    (GIMBAL_SYSID_MODE == GIMBAL_SYSID_PITCH_FF_SWEEP)
+    (GIMBAL_SYSID_MODE == GIMBAL_SYSID_PITCH_FF_SWEEP) || \
+    (GIMBAL_SYSID_MODE == GIMBAL_SYSID_PITCH_STATIC_FF_MAP)
 static float GimbalSysId_ClampF(float value, float min_value, float max_value)
 {
     if (value > max_value)
@@ -388,7 +429,8 @@ static void GimbalSysId_DebugUpdate(uint8_t phase, uint32_t elapsed_ms)
       (GIMBAL_SYSID_MODE == GIMBAL_SYSID_PITCH_PERF_SINE) || \
       (GIMBAL_SYSID_MODE == GIMBAL_SYSID_PITCH_PRBS) || \
       (GIMBAL_SYSID_MODE == GIMBAL_SYSID_PITCH_FAST_MULTISINE) || \
-      (GIMBAL_SYSID_MODE == GIMBAL_SYSID_PITCH_FF_SWEEP)
+      (GIMBAL_SYSID_MODE == GIMBAL_SYSID_PITCH_FF_SWEEP) || \
+      (GIMBAL_SYSID_MODE == GIMBAL_SYSID_PITCH_STATIC_FF_MAP)
     gimbal_sysid_debug.yaw_offset_rad = 0.0f;
     gimbal_sysid_debug.pitch_offset_rad = sysid_state.current_offset_rad;
 #else
@@ -946,6 +988,89 @@ uint8_t GimbalSysId_Update(const Gimbal_Upload_Data_s *feedback, Gimbal_Ctrl_Cmd
     if (elapsed_ms < (GIMBAL_SYSID_PITCH_FF_SWEEP_BASELINE_MS +
                       sweep_total_ms +
                       GIMBAL_SYSID_PITCH_FF_SWEEP_RETURN_MS))
+    {
+        sysid_state.current_offset_rad = 0.0f;
+        cmd->pitch = sysid_state.base_pitch_rad;
+        GimbalSysId_DebugUpdate(GIMBAL_SYSID_PHASE_RETURN, elapsed_ms);
+        return 1u;
+    }
+
+    sysid_state.current_offset_rad = 0.0f;
+    cmd->pitch = sysid_state.base_pitch_rad;
+    GimbalSysId_DebugUpdate(GIMBAL_SYSID_PHASE_DONE, elapsed_ms);
+    return 1u;
+#elif GIMBAL_SYSID_MODE == GIMBAL_SYSID_PITCH_STATIC_FF_MAP
+    uint32_t now_tick_ms;
+    uint32_t elapsed_ms;
+    uint32_t map_ms;
+    uint32_t stage_elapsed_ms;
+    uint8_t stage_index;
+    const uint8_t stage_count = (uint8_t)(sizeof(pitch_static_ff_map_offsets_rad) /
+                                          sizeof(pitch_static_ff_map_offsets_rad[0]));
+
+    if ((feedback == NULL) || (cmd == NULL) || !feedback->imu_online)
+    {
+        GimbalSysId_Init();
+        return 0u;
+    }
+
+    now_tick_ms = HAL_GetTick();
+    if (!sysid_state.started)
+    {
+        sysid_state.started = 1u;
+        sysid_state.start_tick_ms = now_tick_ms;
+        sysid_state.stage_start_tick_ms = now_tick_ms;
+        sysid_state.stage_hold_ms = GIMBAL_SYSID_PITCH_STATIC_MAP_STAGE_MS;
+        sysid_state.seq_index = 0u;
+        sysid_state.current_offset_index = 0xFFu;
+        sysid_state.current_offset_rad = 0.0f;
+        sysid_state.base_yaw_rad = feedback->gimbal_imu_data.YawTotalAngle;
+        sysid_state.base_pitch_rad = GimbalSysId_ClampF(feedback->gimbal_imu_data.Pitch,
+                                                        GIMBAL_PITCH_MIN_RAD,
+                                                        GIMBAL_PITCH_MAX_RAD);
+    }
+
+    elapsed_ms = now_tick_ms - sysid_state.start_tick_ms;
+    map_ms = (uint32_t)stage_count * GIMBAL_SYSID_PITCH_STATIC_MAP_STAGE_MS;
+    cmd->gimbal_mode = GIMBAL_IMU_MODE;
+    cmd->yaw = sysid_state.base_yaw_rad;
+
+    if (elapsed_ms < GIMBAL_SYSID_PITCH_STATIC_MAP_BASELINE_MS)
+    {
+        sysid_state.current_offset_rad = 0.0f;
+        cmd->pitch = sysid_state.base_pitch_rad;
+        GimbalSysId_DebugUpdate(GIMBAL_SYSID_PHASE_BASELINE, elapsed_ms);
+        return 1u;
+    }
+
+    if (elapsed_ms < (GIMBAL_SYSID_PITCH_STATIC_MAP_BASELINE_MS + map_ms))
+    {
+        stage_elapsed_ms = elapsed_ms - GIMBAL_SYSID_PITCH_STATIC_MAP_BASELINE_MS;
+        stage_index = (uint8_t)(stage_elapsed_ms / GIMBAL_SYSID_PITCH_STATIC_MAP_STAGE_MS);
+        if (stage_index >= stage_count)
+        {
+            stage_index = (uint8_t)(stage_count - 1u);
+        }
+
+        if (stage_index != sysid_state.current_offset_index)
+        {
+            sysid_state.current_offset_index = stage_index;
+            sysid_state.current_offset_rad = pitch_static_ff_map_offsets_rad[stage_index];
+            sysid_state.stage_start_tick_ms = now_tick_ms;
+            sysid_state.seq_index++;
+            GimbalResetPitchControlState();
+        }
+
+        cmd->pitch = GimbalSysId_ClampF(sysid_state.base_pitch_rad + sysid_state.current_offset_rad,
+                                        GIMBAL_PITCH_MIN_RAD,
+                                        GIMBAL_PITCH_MAX_RAD);
+        GimbalSysId_DebugUpdate(GIMBAL_SYSID_PHASE_STATIC_MAP, elapsed_ms);
+        return 1u;
+    }
+
+    if (elapsed_ms < (GIMBAL_SYSID_PITCH_STATIC_MAP_BASELINE_MS +
+                      map_ms +
+                      GIMBAL_SYSID_PITCH_STATIC_MAP_RETURN_MS))
     {
         sysid_state.current_offset_rad = 0.0f;
         cmd->pitch = sysid_state.base_pitch_rad;

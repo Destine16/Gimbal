@@ -14,7 +14,7 @@
 - pitch 电机 ID：`4`
 - 视觉链路：`USB CDC`
 - 控制模式：IMU 角度反馈 + IMU 角速度反馈
-- 系统辨识：支持 RTT 采集 yaw / pitch PRBS、fast multisine、阶跃、正弦、pitch 前馈和 pitch 滞回数据
+- 系统辨识：支持 RTT 采集 yaw / pitch PRBS、fast multisine、阶跃、正弦、pitch 前馈、pitch 滞回和 pitch 静态前馈图谱数据
 
 ## 坐标与方向约定
 
@@ -61,9 +61,9 @@ yaw:
   speed Ki = 600.0000
 
 pitch:
-  angle Kp = 28.0000
-  speed Kp = 2800.0000
-  speed Ki = 420.0000
+  angle Kp = 46.0000
+  speed Kp = 3100.0000
+  speed Ki = 300.0000
   gyro LPF alpha = 0.50
 
 current loop:
@@ -75,7 +75,7 @@ current loop:
 
 ```text
 yaw_speed_ref_max = 4.8 rad/s
-pitch_speed_ref_max = 3.6 rad/s
+pitch_speed_ref_max = 3.4 rad/s
 current_ref_max = 3800 raw
 voltage_cmd_max = 5000 raw
 ```
@@ -95,12 +95,23 @@ GIMBAL_PITCH_OUTPUT_HYST_ENABLE = 0
 GIMBAL_PITCH_OUTPUT_SPEED_ENABLE = 0
 ```
 
-当前性能数据和曲线见：
+当前 pitch 参数的性能验证数据和曲线见：
 
 ```text
-Documents/gimbal_performance_report.md
-Documents/feishu_gimbal_report_current.md
-data/perf/analysis/
+data/sysid/pitch_fast_multisine_oldff_kp46_sp3100_ki300_20260522_182257.csv
+data/sysid/pitch_perf_step_oldff_kp46_sp3100_ki300_20260522_182431.csv
+data/sysid/pitch_perf_sine_oldff_kp46_sp3100_ki300_20260522_182558.csv
+data/sysid/analysis/pitch_fast_multisine_oldff_kp46_sp3100_ki300_20260522_182257_pitch_fast_multisine_fast/
+data/sysid/analysis/pitch_perf_step_oldff_kp46_sp3100_ki300_20260522_182431_pitch_perf_step/
+data/sysid/analysis/pitch_perf_sine_oldff_kp46_sp3100_ki300_20260522_182558_pitch_perf_sine/
+```
+
+本轮 pitch 调参保留 `46 / 3100 / 300` 作为当前默认。试验过的 D、参考速度前馈、更高 angle Kp 和更高 speed Kp 均未保留：它们会引入抖动、输出饱和，或破坏 `+/-3 deg` 小角度静态精度。
+
+本轮详细调参记录见：
+
+```text
+docs/control/pitch_tuning_summary_20260522.md
 ```
 
 ## 视觉通信
@@ -268,6 +279,7 @@ GIMBAL_SYSID_MODE=9  pitch PRBS 辨识
 GIMBAL_SYSID_MODE=10 yaw fast multisine 快响应辨识
 GIMBAL_SYSID_MODE=11 pitch fast multisine 快响应辨识
 GIMBAL_SYSID_MODE=12 pitch 低速匀速前馈辨识
+GIMBAL_SYSID_MODE=13 pitch 上下行静态前馈图谱辨识
 ```
 
 示例：
@@ -325,6 +337,22 @@ cmake --build --preset PitchFeedforwardSweepSysid
 ```
 
 这个实验用于拟合 `A*sin(theta)+C+Fc*tanh(v/v0)+Bv*v`，比直接用 fast multisine 闭环残差拟合速度前馈更适合 pitch 物理前馈。
+
+采集 pitch 带相机负载的上下行静态前馈图谱：
+
+```bash
+cmake --preset PitchStaticFfMapSysid
+cmake --build --preset PitchStaticFfMapSysid
+
+.venv-host/bin/python host_tools/gimbal_sysid_rtt_capture.py --duration 125 --kill-conflicts \
+  --elf build/PitchStaticFfMapSysid/Gimbal.elf \
+  --output data/sysid/pitch_static_ff_map_$(date +%Y%m%d_%H%M%S).csv
+
+.venv-host/bin/python host_tools/analyze_pitch_static_ff_map.py \
+  data/sysid/pitch_static_ff_map_YYYYMMDD_HHMMSS.csv
+```
+
+这个实验用于判断 pitch 轴是否主要受重力、线缆/摩擦回差限制，并拟合 `A*sin(theta)+B*cos(theta)+C+H*direction` 作为诊断模型。其中 `+/-38deg` 只是让 `+/-35deg` 目标能从两个方向到达的锚点，默认不会参与最终拟合。当前固件默认只回填兼容的 `A*sin(theta)+C` 静态前馈。
 
 分析快响应数据：
 

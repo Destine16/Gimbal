@@ -16,6 +16,7 @@ typedef enum
     GIMBAL_SYSID_PHASE_SINE,
     GIMBAL_SYSID_PHASE_MULTISINE,
     GIMBAL_SYSID_PHASE_SWEEP,
+    GIMBAL_SYSID_PHASE_STATIC_MAP,
 } GimbalSysIdPhase_e;
 
 typedef struct
