@@ -11,8 +11,6 @@
 #define GIMBAL_SYSID_BASELINE_MS       5000u
 #define GIMBAL_SYSID_PRBS_MS          60000u
 #define GIMBAL_SYSID_RETURN_MS        10000u
-#define GIMBAL_SYSID_PITCH_FF_STAGE_MS 5000u
-#define GIMBAL_SYSID_PITCH_HYST_STAGE_MS 4000u
 #define GIMBAL_SYSID_YAW_STEP_BASELINE_MS 3000u
 #define GIMBAL_SYSID_YAW_STEP_STAGE_MS    2000u
 #define GIMBAL_SYSID_YAW_STEP_RETURN_MS   3000u
@@ -25,8 +23,6 @@
 #define GIMBAL_SYSID_FAST_MULTISINE_BASELINE_MS 3000u
 #define GIMBAL_SYSID_FAST_MULTISINE_MS          45000u
 #define GIMBAL_SYSID_FAST_MULTISINE_RETURN_MS   5000u
-#define GIMBAL_SYSID_PITCH_FF_SWEEP_BASELINE_MS 3000u
-#define GIMBAL_SYSID_PITCH_FF_SWEEP_RETURN_MS   4000u
 #define GIMBAL_SYSID_PITCH_STATIC_MAP_BASELINE_MS 3000u
 #define GIMBAL_SYSID_PITCH_STATIC_MAP_STAGE_MS    3500u
 #define GIMBAL_SYSID_PITCH_STATIC_MAP_RETURN_MS   4000u
@@ -170,26 +166,6 @@ static const GimbalSysIdMultiSineComponent_s fast_multisine_components[] = {
 #endif
 #endif
 
-#if GIMBAL_SYSID_MODE == GIMBAL_SYSID_PITCH_FF_SWEEP
-typedef struct
-{
-    float start_offset_rad;
-    float end_offset_rad;
-    float speed_rad_s;
-} GimbalSysIdSweepSegment_s;
-
-static const GimbalSysIdSweepSegment_s pitch_ff_sweep_segments[] = {
-    {0.0f, -0.43633231f, 0.06981317f},          // 0 -> -25 deg, 4 deg/s
-    {-0.43633231f, 0.43633231f, 0.03490659f},   // -25 -> +25 deg, 2 deg/s
-    {0.43633231f, -0.43633231f, 0.03490659f},   // +25 -> -25 deg, 2 deg/s
-    {-0.43633231f, 0.43633231f, 0.06981317f},   // -25 -> +25 deg, 4 deg/s
-    {0.43633231f, -0.43633231f, 0.06981317f},   // +25 -> -25 deg, 4 deg/s
-    {-0.43633231f, 0.43633231f, 0.10471976f},   // -25 -> +25 deg, 6 deg/s
-    {0.43633231f, -0.43633231f, 0.10471976f},   // +25 -> -25 deg, 6 deg/s
-    {-0.43633231f, 0.0f, 0.06981317f},          // -25 -> 0 deg, 4 deg/s
-};
-#endif
-
 #if GIMBAL_SYSID_MODE == GIMBAL_SYSID_PITCH_STATIC_FF_MAP
 static const float pitch_static_ff_map_offsets_rad[] = {
     0.0f,
@@ -223,58 +199,6 @@ static const float pitch_static_ff_map_offsets_rad[] = {
     0.26179939f,  // +15 deg
     0.43633231f,  // +25 deg
     0.61086524f,  // +35 deg
-    0.0f,
-};
-#endif
-
-#if GIMBAL_SYSID_MODE == GIMBAL_SYSID_PITCH_FF
-static const float pitch_ff_offsets_rad[] = {
-    0.0f,
-    0.17453293f,  // +10 deg
-    0.0f,
-    -0.17453293f, // -10 deg
-    0.0f,
-    0.34906585f,  // +20 deg
-    0.0f,
-    -0.34906585f, // -20 deg
-    0.0f,
-    0.52359878f,  // +30 deg
-    0.0f,
-    -0.52359878f, // -30 deg
-    0.0f,
-    0.66322512f,  // +38 deg
-    0.0f,
-    -0.66322512f, // -38 deg
-    0.0f,
-};
-#endif
-
-#if GIMBAL_SYSID_MODE == GIMBAL_SYSID_PITCH_HYST
-static const float pitch_hyst_offsets_rad[] = {
-    0.0f,
-    0.17453293f,  // +10 deg
-    0.34906585f,  // +20 deg
-    0.52359878f,  // +30 deg
-    0.66322512f,  // +38 deg
-    0.52359878f,  // +30 deg
-    0.34906585f,  // +20 deg
-    0.17453293f,  // +10 deg
-    0.0f,
-    -0.17453293f, // -10 deg
-    -0.34906585f, // -20 deg
-    -0.52359878f, // -30 deg
-    -0.66322512f, // -38 deg
-    -0.52359878f, // -30 deg
-    -0.34906585f, // -20 deg
-    -0.17453293f, // -10 deg
-    0.0f,
-    0.17453293f,  // +10 deg
-    0.34906585f,  // +20 deg
-    0.52359878f,  // +30 deg
-    0.66322512f,  // +38 deg
-    0.52359878f,  // +30 deg
-    0.34906585f,  // +20 deg
-    0.17453293f,  // +10 deg
     0.0f,
 };
 #endif
@@ -345,13 +269,10 @@ static uint8_t GimbalSysId_NextOffsetIndex(void)
 }
 #endif
 
-#if (GIMBAL_SYSID_MODE == GIMBAL_SYSID_PITCH_FF) || \
-    (GIMBAL_SYSID_MODE == GIMBAL_SYSID_PITCH_HYST) || \
-    (GIMBAL_SYSID_MODE == GIMBAL_SYSID_PITCH_PERF_STEP) || \
+#if (GIMBAL_SYSID_MODE == GIMBAL_SYSID_PITCH_PERF_STEP) || \
     (GIMBAL_SYSID_MODE == GIMBAL_SYSID_PITCH_PERF_SINE) || \
     (GIMBAL_SYSID_MODE == GIMBAL_SYSID_PITCH_PRBS) || \
     (GIMBAL_SYSID_MODE == GIMBAL_SYSID_PITCH_FAST_MULTISINE) || \
-    (GIMBAL_SYSID_MODE == GIMBAL_SYSID_PITCH_FF_SWEEP) || \
     (GIMBAL_SYSID_MODE == GIMBAL_SYSID_PITCH_STATIC_FF_MAP)
 static float GimbalSysId_ClampF(float value, float min_value, float max_value)
 {
@@ -364,45 +285,6 @@ static float GimbalSysId_ClampF(float value, float min_value, float max_value)
         return min_value;
     }
     return value;
-}
-#endif
-
-#if GIMBAL_SYSID_MODE == GIMBAL_SYSID_PITCH_FF_SWEEP
-static uint8_t GimbalSysId_PitchSweepSegmentCount(void)
-{
-    return (uint8_t)(sizeof(pitch_ff_sweep_segments) / sizeof(pitch_ff_sweep_segments[0]));
-}
-
-static uint32_t GimbalSysId_PitchSweepSegmentMs(uint8_t index)
-{
-    float distance_rad;
-    float speed_rad_s;
-
-    if (index >= GimbalSysId_PitchSweepSegmentCount())
-    {
-        return 0u;
-    }
-
-    distance_rad = fabsf(pitch_ff_sweep_segments[index].end_offset_rad -
-                         pitch_ff_sweep_segments[index].start_offset_rad);
-    speed_rad_s = pitch_ff_sweep_segments[index].speed_rad_s;
-    if ((distance_rad <= 0.0f) || (speed_rad_s <= 0.0f))
-    {
-        return 0u;
-    }
-    return (uint32_t)((distance_rad / speed_rad_s) * 1000.0f + 0.5f);
-}
-
-static uint32_t GimbalSysId_PitchSweepTotalMs(void)
-{
-    uint32_t total_ms = 0u;
-    uint8_t i;
-
-    for (i = 0u; i < GimbalSysId_PitchSweepSegmentCount(); i++)
-    {
-        total_ms += GimbalSysId_PitchSweepSegmentMs(i);
-    }
-    return total_ms;
 }
 #endif
 
@@ -423,13 +305,10 @@ static void GimbalSysId_DebugUpdate(uint8_t phase, uint32_t elapsed_ms)
     (GIMBAL_SYSID_MODE == GIMBAL_SYSID_YAW_FAST_MULTISINE)
     gimbal_sysid_debug.yaw_offset_rad = sysid_state.current_offset_rad;
     gimbal_sysid_debug.pitch_offset_rad = 0.0f;
-#elif (GIMBAL_SYSID_MODE == GIMBAL_SYSID_PITCH_FF) || \
-      (GIMBAL_SYSID_MODE == GIMBAL_SYSID_PITCH_HYST) || \
-      (GIMBAL_SYSID_MODE == GIMBAL_SYSID_PITCH_PERF_STEP) || \
+#elif (GIMBAL_SYSID_MODE == GIMBAL_SYSID_PITCH_PERF_STEP) || \
       (GIMBAL_SYSID_MODE == GIMBAL_SYSID_PITCH_PERF_SINE) || \
       (GIMBAL_SYSID_MODE == GIMBAL_SYSID_PITCH_PRBS) || \
       (GIMBAL_SYSID_MODE == GIMBAL_SYSID_PITCH_FAST_MULTISINE) || \
-      (GIMBAL_SYSID_MODE == GIMBAL_SYSID_PITCH_FF_SWEEP) || \
       (GIMBAL_SYSID_MODE == GIMBAL_SYSID_PITCH_STATIC_FF_MAP)
     gimbal_sysid_debug.yaw_offset_rad = 0.0f;
     gimbal_sysid_debug.pitch_offset_rad = sysid_state.current_offset_rad;
@@ -891,114 +770,6 @@ uint8_t GimbalSysId_Update(const Gimbal_Upload_Data_s *feedback, Gimbal_Ctrl_Cmd
     cmd->pitch = sysid_state.base_pitch_rad;
     GimbalSysId_DebugUpdate(GIMBAL_SYSID_PHASE_DONE, elapsed_ms);
     return 1u;
-#elif GIMBAL_SYSID_MODE == GIMBAL_SYSID_PITCH_FF_SWEEP
-    uint32_t now_tick_ms;
-    uint32_t elapsed_ms;
-    uint32_t sweep_elapsed_ms;
-    uint32_t segment_start_ms = 0u;
-    uint32_t segment_ms = 0u;
-    uint32_t sweep_total_ms;
-    uint8_t segment_index;
-    uint8_t segment_count;
-    float segment_ratio;
-    float offset_delta;
-
-    if ((feedback == NULL) || (cmd == NULL) || !feedback->imu_online)
-    {
-        GimbalSysId_Init();
-        return 0u;
-    }
-
-    now_tick_ms = HAL_GetTick();
-    if (!sysid_state.started)
-    {
-        sysid_state.started = 1u;
-        sysid_state.start_tick_ms = now_tick_ms;
-        sysid_state.stage_start_tick_ms = now_tick_ms;
-        sysid_state.stage_hold_ms = 0u;
-        sysid_state.seq_index = 0u;
-        sysid_state.current_offset_index = 0xFFu;
-        sysid_state.current_offset_rad = 0.0f;
-        sysid_state.base_yaw_rad = feedback->gimbal_imu_data.YawTotalAngle;
-        sysid_state.base_pitch_rad = GimbalSysId_ClampF(feedback->gimbal_imu_data.Pitch,
-                                                        GIMBAL_PITCH_MIN_RAD,
-                                                        GIMBAL_PITCH_MAX_RAD);
-    }
-
-    elapsed_ms = now_tick_ms - sysid_state.start_tick_ms;
-    sweep_total_ms = GimbalSysId_PitchSweepTotalMs();
-    cmd->gimbal_mode = GIMBAL_IMU_MODE;
-    cmd->yaw = sysid_state.base_yaw_rad;
-
-    if (elapsed_ms < GIMBAL_SYSID_PITCH_FF_SWEEP_BASELINE_MS)
-    {
-        sysid_state.current_offset_rad = 0.0f;
-        cmd->pitch = sysid_state.base_pitch_rad;
-        GimbalSysId_DebugUpdate(GIMBAL_SYSID_PHASE_BASELINE, elapsed_ms);
-        return 1u;
-    }
-
-    if (elapsed_ms < (GIMBAL_SYSID_PITCH_FF_SWEEP_BASELINE_MS + sweep_total_ms))
-    {
-        sweep_elapsed_ms = elapsed_ms - GIMBAL_SYSID_PITCH_FF_SWEEP_BASELINE_MS;
-        segment_count = GimbalSysId_PitchSweepSegmentCount();
-        for (segment_index = 0u; segment_index < segment_count; segment_index++)
-        {
-            segment_ms = GimbalSysId_PitchSweepSegmentMs(segment_index);
-            if (sweep_elapsed_ms < (segment_start_ms + segment_ms))
-            {
-                break;
-            }
-            segment_start_ms += segment_ms;
-        }
-        if (segment_index >= segment_count)
-        {
-            segment_index = (uint8_t)(segment_count - 1u);
-            segment_ms = GimbalSysId_PitchSweepSegmentMs(segment_index);
-            segment_start_ms = sweep_total_ms - segment_ms;
-        }
-
-        if (segment_index != sysid_state.current_offset_index)
-        {
-            sysid_state.current_offset_index = segment_index;
-            sysid_state.stage_start_tick_ms = now_tick_ms;
-            sysid_state.seq_index++;
-        }
-
-        if (segment_ms == 0u)
-        {
-            segment_ratio = 1.0f;
-        }
-        else
-        {
-            segment_ratio = (float)(sweep_elapsed_ms - segment_start_ms) / (float)segment_ms;
-            segment_ratio = GimbalSysId_ClampF(segment_ratio, 0.0f, 1.0f);
-        }
-        offset_delta = pitch_ff_sweep_segments[segment_index].end_offset_rad -
-                       pitch_ff_sweep_segments[segment_index].start_offset_rad;
-        sysid_state.current_offset_rad = pitch_ff_sweep_segments[segment_index].start_offset_rad +
-                                         offset_delta * segment_ratio;
-        cmd->pitch = GimbalSysId_ClampF(sysid_state.base_pitch_rad + sysid_state.current_offset_rad,
-                                        GIMBAL_PITCH_MIN_RAD,
-                                        GIMBAL_PITCH_MAX_RAD);
-        GimbalSysId_DebugUpdate(GIMBAL_SYSID_PHASE_SWEEP, elapsed_ms);
-        return 1u;
-    }
-
-    if (elapsed_ms < (GIMBAL_SYSID_PITCH_FF_SWEEP_BASELINE_MS +
-                      sweep_total_ms +
-                      GIMBAL_SYSID_PITCH_FF_SWEEP_RETURN_MS))
-    {
-        sysid_state.current_offset_rad = 0.0f;
-        cmd->pitch = sysid_state.base_pitch_rad;
-        GimbalSysId_DebugUpdate(GIMBAL_SYSID_PHASE_RETURN, elapsed_ms);
-        return 1u;
-    }
-
-    sysid_state.current_offset_rad = 0.0f;
-    cmd->pitch = sysid_state.base_pitch_rad;
-    GimbalSysId_DebugUpdate(GIMBAL_SYSID_PHASE_DONE, elapsed_ms);
-    return 1u;
 #elif GIMBAL_SYSID_MODE == GIMBAL_SYSID_PITCH_STATIC_FF_MAP
     uint32_t now_tick_ms;
     uint32_t elapsed_ms;
@@ -1071,166 +842,6 @@ uint8_t GimbalSysId_Update(const Gimbal_Upload_Data_s *feedback, Gimbal_Ctrl_Cmd
     if (elapsed_ms < (GIMBAL_SYSID_PITCH_STATIC_MAP_BASELINE_MS +
                       map_ms +
                       GIMBAL_SYSID_PITCH_STATIC_MAP_RETURN_MS))
-    {
-        sysid_state.current_offset_rad = 0.0f;
-        cmd->pitch = sysid_state.base_pitch_rad;
-        GimbalSysId_DebugUpdate(GIMBAL_SYSID_PHASE_RETURN, elapsed_ms);
-        return 1u;
-    }
-
-    sysid_state.current_offset_rad = 0.0f;
-    cmd->pitch = sysid_state.base_pitch_rad;
-    GimbalSysId_DebugUpdate(GIMBAL_SYSID_PHASE_DONE, elapsed_ms);
-    return 1u;
-#elif GIMBAL_SYSID_MODE == GIMBAL_SYSID_PITCH_FF
-    uint32_t now_tick_ms;
-    uint32_t elapsed_ms;
-    uint32_t pitch_ff_ms;
-    uint32_t stage_elapsed_ms;
-    uint8_t stage_index;
-    const uint8_t stage_count = (uint8_t)(sizeof(pitch_ff_offsets_rad) / sizeof(pitch_ff_offsets_rad[0]));
-
-    if ((feedback == NULL) || (cmd == NULL) || !feedback->imu_online)
-    {
-        GimbalSysId_Init();
-        return 0u;
-    }
-
-    now_tick_ms = HAL_GetTick();
-    if (!sysid_state.started)
-    {
-        sysid_state.started = 1u;
-        sysid_state.start_tick_ms = now_tick_ms;
-        sysid_state.stage_start_tick_ms = now_tick_ms;
-        sysid_state.stage_hold_ms = GIMBAL_SYSID_PITCH_FF_STAGE_MS;
-        sysid_state.seq_index = 0u;
-        sysid_state.current_offset_index = 0xFFu;
-        sysid_state.current_offset_rad = 0.0f;
-        sysid_state.base_yaw_rad = feedback->gimbal_imu_data.YawTotalAngle;
-        sysid_state.base_pitch_rad = GimbalSysId_ClampF(feedback->gimbal_imu_data.Pitch,
-                                                        GIMBAL_PITCH_MIN_RAD,
-                                                        GIMBAL_PITCH_MAX_RAD);
-    }
-
-    elapsed_ms = now_tick_ms - sysid_state.start_tick_ms;
-    pitch_ff_ms = (uint32_t)stage_count * GIMBAL_SYSID_PITCH_FF_STAGE_MS;
-    cmd->gimbal_mode = GIMBAL_IMU_MODE;
-    cmd->yaw = sysid_state.base_yaw_rad;
-
-    if (elapsed_ms < GIMBAL_SYSID_BASELINE_MS)
-    {
-        sysid_state.current_offset_rad = 0.0f;
-        cmd->pitch = sysid_state.base_pitch_rad;
-        GimbalSysId_DebugUpdate(GIMBAL_SYSID_PHASE_BASELINE, elapsed_ms);
-        return 1u;
-    }
-
-    if (elapsed_ms < (GIMBAL_SYSID_BASELINE_MS + pitch_ff_ms))
-    {
-        stage_elapsed_ms = elapsed_ms - GIMBAL_SYSID_BASELINE_MS;
-        stage_index = (uint8_t)(stage_elapsed_ms / GIMBAL_SYSID_PITCH_FF_STAGE_MS);
-        if (stage_index >= stage_count)
-        {
-            stage_index = (uint8_t)(stage_count - 1u);
-        }
-
-        if (stage_index != sysid_state.current_offset_index)
-        {
-            sysid_state.current_offset_index = stage_index;
-            sysid_state.current_offset_rad = pitch_ff_offsets_rad[stage_index];
-            sysid_state.stage_start_tick_ms = now_tick_ms;
-            sysid_state.seq_index++;
-            GimbalResetPitchControlState();
-        }
-
-        cmd->pitch = GimbalSysId_ClampF(sysid_state.base_pitch_rad + sysid_state.current_offset_rad,
-                                        GIMBAL_PITCH_MIN_RAD,
-                                        GIMBAL_PITCH_MAX_RAD);
-        GimbalSysId_DebugUpdate(GIMBAL_SYSID_PHASE_STEP, elapsed_ms);
-        return 1u;
-    }
-
-    if (elapsed_ms < (GIMBAL_SYSID_BASELINE_MS + pitch_ff_ms + GIMBAL_SYSID_RETURN_MS))
-    {
-        sysid_state.current_offset_rad = 0.0f;
-        cmd->pitch = sysid_state.base_pitch_rad;
-        GimbalSysId_DebugUpdate(GIMBAL_SYSID_PHASE_RETURN, elapsed_ms);
-        return 1u;
-    }
-
-    sysid_state.current_offset_rad = 0.0f;
-    cmd->pitch = sysid_state.base_pitch_rad;
-    GimbalSysId_DebugUpdate(GIMBAL_SYSID_PHASE_DONE, elapsed_ms);
-    return 1u;
-#elif GIMBAL_SYSID_MODE == GIMBAL_SYSID_PITCH_HYST
-    uint32_t now_tick_ms;
-    uint32_t elapsed_ms;
-    uint32_t pitch_hyst_ms;
-    uint32_t stage_elapsed_ms;
-    uint8_t stage_index;
-    const uint8_t stage_count = (uint8_t)(sizeof(pitch_hyst_offsets_rad) / sizeof(pitch_hyst_offsets_rad[0]));
-
-    if ((feedback == NULL) || (cmd == NULL) || !feedback->imu_online)
-    {
-        GimbalSysId_Init();
-        return 0u;
-    }
-
-    now_tick_ms = HAL_GetTick();
-    if (!sysid_state.started)
-    {
-        sysid_state.started = 1u;
-        sysid_state.start_tick_ms = now_tick_ms;
-        sysid_state.stage_start_tick_ms = now_tick_ms;
-        sysid_state.stage_hold_ms = GIMBAL_SYSID_PITCH_HYST_STAGE_MS;
-        sysid_state.seq_index = 0u;
-        sysid_state.current_offset_index = 0xFFu;
-        sysid_state.current_offset_rad = 0.0f;
-        sysid_state.base_yaw_rad = feedback->gimbal_imu_data.YawTotalAngle;
-        sysid_state.base_pitch_rad = GimbalSysId_ClampF(feedback->gimbal_imu_data.Pitch,
-                                                        GIMBAL_PITCH_MIN_RAD,
-                                                        GIMBAL_PITCH_MAX_RAD);
-    }
-
-    elapsed_ms = now_tick_ms - sysid_state.start_tick_ms;
-    pitch_hyst_ms = (uint32_t)stage_count * GIMBAL_SYSID_PITCH_HYST_STAGE_MS;
-    cmd->gimbal_mode = GIMBAL_IMU_MODE;
-    cmd->yaw = sysid_state.base_yaw_rad;
-
-    if (elapsed_ms < GIMBAL_SYSID_BASELINE_MS)
-    {
-        sysid_state.current_offset_rad = 0.0f;
-        cmd->pitch = sysid_state.base_pitch_rad;
-        GimbalSysId_DebugUpdate(GIMBAL_SYSID_PHASE_BASELINE, elapsed_ms);
-        return 1u;
-    }
-
-    if (elapsed_ms < (GIMBAL_SYSID_BASELINE_MS + pitch_hyst_ms))
-    {
-        stage_elapsed_ms = elapsed_ms - GIMBAL_SYSID_BASELINE_MS;
-        stage_index = (uint8_t)(stage_elapsed_ms / GIMBAL_SYSID_PITCH_HYST_STAGE_MS);
-        if (stage_index >= stage_count)
-        {
-            stage_index = (uint8_t)(stage_count - 1u);
-        }
-
-        if (stage_index != sysid_state.current_offset_index)
-        {
-            sysid_state.current_offset_index = stage_index;
-            sysid_state.current_offset_rad = pitch_hyst_offsets_rad[stage_index];
-            sysid_state.stage_start_tick_ms = now_tick_ms;
-            sysid_state.seq_index++;
-            GimbalResetPitchControlState();
-        }
-
-        cmd->pitch = GimbalSysId_ClampF(sysid_state.base_pitch_rad + sysid_state.current_offset_rad,
-                                        GIMBAL_PITCH_MIN_RAD,
-                                        GIMBAL_PITCH_MAX_RAD);
-        GimbalSysId_DebugUpdate(GIMBAL_SYSID_PHASE_STEP, elapsed_ms);
-        return 1u;
-    }
-
-    if (elapsed_ms < (GIMBAL_SYSID_BASELINE_MS + pitch_hyst_ms + GIMBAL_SYSID_RETURN_MS))
     {
         sysid_state.current_offset_rad = 0.0f;
         cmd->pitch = sysid_state.base_pitch_rad;

@@ -14,7 +14,7 @@
 - pitch 电机 ID：`4`
 - 视觉链路：`USB CDC`
 - 控制模式：IMU 角度反馈 + IMU 角速度反馈
-- 系统辨识：支持 RTT 采集 yaw / pitch PRBS、fast multisine、阶跃、正弦、pitch 前馈、pitch 滞回和 pitch 静态前馈图谱数据
+- 系统辨识：支持 RTT 采集 yaw / pitch PRBS、fast multisine、阶跃、正弦和 pitch 静态前馈图谱数据
 
 ## 坐标与方向约定
 
@@ -88,12 +88,7 @@ A = -1115.8459
 C = -97.4462
 ```
 
-当前默认关闭 pitch 滞回/摩擦前馈：
-
-```text
-GIMBAL_PITCH_OUTPUT_HYST_ENABLE = 0
-GIMBAL_PITCH_OUTPUT_SPEED_ENABLE = 0
-```
+已删除试验效果不好的 speed feedforward 和简单 hysteresis feedforward 开关。方向相关摩擦/线缆项只在静态图谱中作为诊断量，不直接进入当前固件输出。
 
 当前 pitch 参数的性能验证数据和曲线见：
 
@@ -268,9 +263,7 @@ q
 ```text
 GIMBAL_SYSID_MODE=0  关闭系统辨识，普通云台固件
 GIMBAL_SYSID_MODE=1  yaw PRBS 辨识
-GIMBAL_SYSID_MODE=2  pitch 重力前馈辨识
 GIMBAL_SYSID_MODE=3  yaw 小阶跃验证
-GIMBAL_SYSID_MODE=4  pitch 滞回/摩擦辨识
 GIMBAL_SYSID_MODE=5  yaw 阶跃性能测试
 GIMBAL_SYSID_MODE=6  pitch 阶跃性能测试
 GIMBAL_SYSID_MODE=7  yaw 正弦跟踪性能测试
@@ -278,22 +271,14 @@ GIMBAL_SYSID_MODE=8  pitch 正弦跟踪性能测试
 GIMBAL_SYSID_MODE=9  pitch PRBS 辨识
 GIMBAL_SYSID_MODE=10 yaw fast multisine 快响应辨识
 GIMBAL_SYSID_MODE=11 pitch fast multisine 快响应辨识
-GIMBAL_SYSID_MODE=12 pitch 低速匀速前馈辨识
 GIMBAL_SYSID_MODE=13 pitch 上下行静态前馈图谱辨识
 ```
 
 示例：
 
 ```bash
-cmake --preset Debug -DGIMBAL_SYSID_MODE=4
+cmake --preset Debug -DGIMBAL_SYSID_MODE=11
 cmake --build --preset Debug
-```
-
-RTT 采集示例：
-
-```bash
-.venv-host/bin/python host_tools/gimbal_sysid_rtt_capture.py --duration 123 --kill-conflicts \
-  --output data/sysid/pitch_hyst_rtt_$(date +%Y%m%d_%H%M%S).csv
 ```
 
 快响应辨识推荐使用 preset：
@@ -321,22 +306,6 @@ cmake --build --preset PitchFastMultisineSysid
   --elf build/PitchFastMultisineSysid/Gimbal.elf \
   --output data/sysid/pitch_fast_multisine_$(date +%Y%m%d_%H%M%S).csv
 ```
-
-采集 pitch 低速匀速前馈 sweep：
-
-```bash
-cmake --preset PitchFeedforwardSweepSysid
-cmake --build --preset PitchFeedforwardSweepSysid
-
-.venv-host/bin/python host_tools/gimbal_sysid_rtt_capture.py --duration 55 --kill-conflicts \
-  --elf build/PitchFeedforwardSweepSysid/Gimbal.elf \
-  --output data/sysid/pitch_ff_sweep_$(date +%Y%m%d_%H%M%S).csv
-
-.venv-host/bin/python host_tools/analyze_pitch_ff_sweep.py \
-  data/sysid/pitch_ff_sweep_YYYYMMDD_HHMMSS.csv
-```
-
-这个实验用于拟合 `A*sin(theta)+C+Fc*tanh(v/v0)+Bv*v`，比直接用 fast multisine 闭环残差拟合速度前馈更适合 pitch 物理前馈。
 
 采集 pitch 带相机负载的上下行静态前馈图谱：
 
@@ -402,9 +371,9 @@ cmake --build --preset Debug
 
 - [yaw PRBS 与 PID 优化](docs/control/yaw_prbs_sysid_experiment.md)
 - [yaw / pitch 快响应系统辨识与 PID 优化](docs/control/fast_pid_sysid_workflow.md)
+- [pitch 静态前馈图谱实验](docs/control/pitch_static_ff_map_experiment.md)
+- [pitch 调参小结](docs/control/pitch_tuning_summary_20260522.md)
 - [云台性能测试报告](Documents/gimbal_performance_report.md)
-- [pitch 重力前馈辨识](docs/control/pitch_feedforward_sysid_experiment.md)
-- [pitch 滞回/摩擦辨识](docs/control/pitch_hysteresis_sysid_experiment.md)
 - [视觉 USB CDC 通信协议](docs/protocol/vision_usb_cdc_protocol.md)
 - [云台坐标系与方向约定](docs/control/gimbal_coordinate_and_direction.md)
 - [IMU 姿态解算说明](docs/control/imu_attitude_estimation.md)
@@ -422,4 +391,4 @@ cmake --build --preset Debug
 - pitch 限位没有超过机械限位
 - IMU 方向和云台业务坐标一致
 - USB CDC 设备名选中的是主控板，不是 J-Link
-- pitch 重力前馈已开启，滞回/摩擦前馈默认关闭
+- pitch 静态重力前馈已开启

@@ -83,10 +83,8 @@ u = A*sin(theta) + B*cos(theta) + C + H*direction
 ```c
 #define GIMBAL_PITCH_OUTPUT_FF_SIN_RAW
 #define GIMBAL_PITCH_OUTPUT_FF_OFFSET_RAW
-#define GIMBAL_PITCH_OUTPUT_FF_HYST_RAW
-#define GIMBAL_PITCH_OUTPUT_HYST_ENABLE
 ```
 
-默认输出会保持 `GIMBAL_PITCH_OUTPUT_HYST_ENABLE = 0`。方向相关 spread 只用于判断线缆/摩擦问题是否存在；当前简单 hysteresis 通道不是“到达方向保持补偿”，不能直接等同使用。
+方向相关 spread 只用于判断线缆/摩擦问题是否存在。简单 hysteresis 前馈开关已经删除，因为它不是“到达方向保持补偿”，之前测试也没有作为可保留方案。
 
 回填后不要直接认为完成优化，还需要重新跑 pitch 阶跃和正弦性能测试确认。

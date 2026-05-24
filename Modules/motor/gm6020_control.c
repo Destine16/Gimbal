@@ -2,8 +2,6 @@
 
 #include <math.h>
 
-#define GM6020_OUTPUT_FF_HYST_TRANSITION_RAD_S 0.50f
-
 static void GM6020_ResetPIDState(PIDInstance *pid)
 {
     if (pid == NULL)
@@ -47,32 +45,6 @@ static int16_t GM6020_OutputClamp(float command, float max_output_raw)
     return (int16_t)command;
 }
 
-static float GM6020_SmoothFrictionSign(float speed_ref_rad_s, float transition_rad_s)
-{
-    if (transition_rad_s <= 0.0f)
-    {
-        transition_rad_s = GM6020_OUTPUT_FF_HYST_TRANSITION_RAD_S;
-    }
-    return tanhf(speed_ref_rad_s / transition_rad_s);
-}
-
-static float GM6020_ClampFloat(float value, float limit_abs)
-{
-    if (limit_abs <= 0.0f)
-    {
-        return value;
-    }
-    if (value > limit_abs)
-    {
-        return limit_abs;
-    }
-    if (value < -limit_abs)
-    {
-        return -limit_abs;
-    }
-    return value;
-}
-
 void GM6020_ResetControlState(GM6020_Instance *motor)
 {
     if (motor == NULL)
@@ -83,7 +55,6 @@ void GM6020_ResetControlState(GM6020_Instance *motor)
     GM6020_ResetPIDState(&motor->angle_pid);
     GM6020_ResetPIDState(&motor->speed_pid);
     GM6020_ResetPIDState(&motor->current_pid);
-    motor->output_ff_motion_sign = 0.0f;
 }
 
 // 逐个电机更新三环输出,发送动作由 CAN 层统一完成
@@ -131,20 +102,8 @@ static void GM6020_ControlStep(GM6020_Instance *motor, uint32_t now_tick)
     speed_ref = PIDCalculate(&motor->angle_pid, angle_feedback, angle_ref);
     current_ref = PIDCalculate(&motor->speed_pid, speed_feedback, speed_ref);
     voltage_ref = PIDCalculate(&motor->current_pid, current_feedback, current_ref);
-    if (motor->output_ff_hyst_raw != 0.0f)
-    {
-        motor->output_ff_motion_sign = GM6020_SmoothFrictionSign(speed_ref,
-                                                                 motor->output_ff_hyst_transition_rad_s);
-    }
-    else
-    {
-        motor->output_ff_motion_sign = 0.0f;
-    }
     output_ff_raw = motor->output_ff_sin_raw * sinf(angle_feedback) +
-                    motor->output_ff_offset_raw +
-                    GM6020_ClampFloat(motor->output_ff_speed_raw * speed_ref,
-                                      motor->output_ff_speed_max_raw) +
-                    motor->output_ff_hyst_raw * motor->output_ff_motion_sign;
+                    motor->output_ff_offset_raw;
 
     motor->angle_feedback_rad = angle_feedback;
     motor->speed_ref_rad_s = speed_ref;

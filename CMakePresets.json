@@ -126,17 +126,6 @@
             }
         },
         {
-            "name": "PitchFeedforwardSweepSysid",
-            "inherits": "default",
-            "cacheVariables": {
-                "CMAKE_BUILD_TYPE": "Debug",
-                "IMU_ONLY_BRINGUP_ENABLE": "OFF",
-                "GIMBAL_SYSID_MODE": "12",
-                "VISION_DEBUG_RTT_ENABLE": "OFF",
-                "IMU_MOUNT_CALIBRATION_ENABLE": "OFF"
-            }
-        },
-        {
             "name": "PitchStaticFfMapSysid",
             "inherits": "default",
             "cacheVariables": {
@@ -204,10 +193,6 @@
         {
             "name": "PitchFastMultisineSysid",
             "configurePreset": "PitchFastMultisineSysid"
-        },
-        {
-            "name": "PitchFeedforwardSweepSysid",
-            "configurePreset": "PitchFeedforwardSweepSysid"
         },
         {
             "name": "PitchStaticFfMapSysid",

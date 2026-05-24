@@ -286,8 +286,6 @@ def build_result(stage_df: pd.DataFrame, target_df: pd.DataFrame,
         "firmware_compatible_macros": {
             "GIMBAL_PITCH_OUTPUT_FF_SIN_RAW": firmware_coefficients["sin(theta)"],
             "GIMBAL_PITCH_OUTPUT_FF_OFFSET_RAW": firmware_coefficients["offset"],
-            "GIMBAL_PITCH_OUTPUT_FF_HYST_RAW": 0.0,
-            "GIMBAL_PITCH_OUTPUT_HYST_ENABLE": 0,
         },
         "diagnostic_coefficients": {
             "GIMBAL_PITCH_OUTPUT_FF_COS_RAW": diagnostic_coefficients["cos(theta)"],
@@ -308,8 +306,6 @@ def write_macro_md(result: dict[str, Any], path: Path) -> None:
         "```c",
         f"#define GIMBAL_PITCH_OUTPUT_FF_SIN_RAW       ({macros['GIMBAL_PITCH_OUTPUT_FF_SIN_RAW']:.4f}f)",
         f"#define GIMBAL_PITCH_OUTPUT_FF_OFFSET_RAW    ({macros['GIMBAL_PITCH_OUTPUT_FF_OFFSET_RAW']:.4f}f)",
-        f"#define GIMBAL_PITCH_OUTPUT_FF_HYST_RAW      ({macros['GIMBAL_PITCH_OUTPUT_FF_HYST_RAW']:.4f}f)",
-        f"#define GIMBAL_PITCH_OUTPUT_HYST_ENABLE     {macros['GIMBAL_PITCH_OUTPUT_HYST_ENABLE']}",
         "```",
         "",
         "Diagnostic-only coefficients from the full static map model:",

@@ -16,7 +16,7 @@ gyro LPF alpha = 0.50
 output_ff = -1115.8459 * sin(theta) - 97.4462
 ```
 
-速度前馈、D/gyro damping、参考速度前馈、静态滞回补偿默认均不启用。
+速度前馈、D/gyro damping、参考速度前馈、静态滞回补偿均未保留；其中 speed feedforward 和简单 hysteresis feedforward 的固件开关、旧实验入口已经删除。
 
 ## 当前性能数据
 

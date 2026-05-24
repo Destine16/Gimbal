@@ -13,7 +13,7 @@ cmake --preset Debug -DGIMBAL_SYSID_MODE=1
 cmake --build --preset Debug
 ```
 
-`GIMBAL_SYSID_MODE=1` 表示 yaw PRBS；`GIMBAL_SYSID_MODE=2` 表示 pitch 前馈静态实验；`GIMBAL_SYSID_MODE=3` 表示 yaw 小阶跃验证；`GIMBAL_SYSID_MODE=4` 表示 pitch 滞回实验。
+`GIMBAL_SYSID_MODE=1` 表示 yaw PRBS；`GIMBAL_SYSID_MODE=3` 表示 yaw 小阶跃验证。pitch 当前推荐使用 `GIMBAL_SYSID_MODE=11` 做 fast multisine，或 `GIMBAL_SYSID_MODE=13` 做静态前馈图谱。
 
 关闭系统辨识模式：
 

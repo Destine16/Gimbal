@@ -11,24 +11,12 @@
 #define GM6020_OLD_VOLTAGE_CURRENT_KP        0.8f
 #define GM6020_OLD_VOLTAGE_CURRENT_KI        100.0f
 
-// Pitch feedforward: output_ff_raw ~= a * sin(theta) + b + clamp(kv * speed_ref) + h * motion_sign
+// Pitch feedforward: output_ff_raw ~= a * sin(theta) + b
 #define GIMBAL_PITCH_OUTPUT_FF_SIN_RAW       (-1115.8459f)
 #define GIMBAL_PITCH_OUTPUT_FF_OFFSET_RAW    (-97.4462f)
-#define GIMBAL_PITCH_OUTPUT_FF_SPEED_RAW     (-486.6887f)
-#define GIMBAL_PITCH_OUTPUT_FF_SPEED_MAX_RAW 339.2f
-#define GIMBAL_PITCH_OUTPUT_FF_HYST_RAW      (-140.0000f)
-#define GIMBAL_PITCH_OUTPUT_FF_HYST_TRANSITION_RAD_S 0.50f
 
 #ifndef GIMBAL_PITCH_OUTPUT_FF_ENABLE
 #define GIMBAL_PITCH_OUTPUT_FF_ENABLE 1
-#endif
-
-#ifndef GIMBAL_PITCH_OUTPUT_HYST_ENABLE
-#define GIMBAL_PITCH_OUTPUT_HYST_ENABLE 0
-#endif
-
-#ifndef GIMBAL_PITCH_OUTPUT_SPEED_ENABLE
-#define GIMBAL_PITCH_OUTPUT_SPEED_ENABLE 0
 #endif
 
 #if GIMBAL_PITCH_OUTPUT_FF_ENABLE
@@ -37,20 +25,6 @@
 #else
 #define GIMBAL_PITCH_OUTPUT_FF_SIN_ACTIVE_RAW       0.0f
 #define GIMBAL_PITCH_OUTPUT_FF_OFFSET_ACTIVE_RAW    0.0f
-#endif
-
-#if GIMBAL_PITCH_OUTPUT_SPEED_ENABLE
-#define GIMBAL_PITCH_OUTPUT_FF_SPEED_ACTIVE_RAW     GIMBAL_PITCH_OUTPUT_FF_SPEED_RAW
-#define GIMBAL_PITCH_OUTPUT_FF_SPEED_MAX_ACTIVE_RAW GIMBAL_PITCH_OUTPUT_FF_SPEED_MAX_RAW
-#else
-#define GIMBAL_PITCH_OUTPUT_FF_SPEED_ACTIVE_RAW     0.0f
-#define GIMBAL_PITCH_OUTPUT_FF_SPEED_MAX_ACTIVE_RAW 0.0f
-#endif
-
-#if GIMBAL_PITCH_OUTPUT_HYST_ENABLE
-#define GIMBAL_PITCH_OUTPUT_FF_HYST_ACTIVE_RAW      GIMBAL_PITCH_OUTPUT_FF_HYST_RAW
-#else
-#define GIMBAL_PITCH_OUTPUT_FF_HYST_ACTIVE_RAW      0.0f
 #endif
 
 // Bring-up 安全限幅: 低于 GM6020 说明书硬规格,确认方向和闭环正常后再逐步放开。
@@ -71,10 +45,6 @@ const GimbalMotorParam_s GimbalYawParam = {
     .max_angle_rad = 0.0f,
     .output_ff_sin_raw = 0.0f,
     .output_ff_offset_raw = 0.0f,
-    .output_ff_speed_raw = 0.0f,
-    .output_ff_speed_max_raw = 0.0f,
-    .output_ff_hyst_raw = 0.0f,
-    .output_ff_hyst_transition_rad_s = 0.0f,
     .angle_pid = {
         .Kp = GM6020_YAW_VOLTAGE_ANGLE_KP,
         .Ki = 0.0f,
@@ -114,10 +84,6 @@ const GimbalMotorParam_s GimbalPitchParam = {
     .max_angle_rad = GIMBAL_PITCH_MAX_RAD,
     .output_ff_sin_raw = GIMBAL_PITCH_OUTPUT_FF_SIN_ACTIVE_RAW,
     .output_ff_offset_raw = GIMBAL_PITCH_OUTPUT_FF_OFFSET_ACTIVE_RAW,
-    .output_ff_speed_raw = GIMBAL_PITCH_OUTPUT_FF_SPEED_ACTIVE_RAW,
-    .output_ff_speed_max_raw = GIMBAL_PITCH_OUTPUT_FF_SPEED_MAX_ACTIVE_RAW,
-    .output_ff_hyst_raw = GIMBAL_PITCH_OUTPUT_FF_HYST_ACTIVE_RAW,
-    .output_ff_hyst_transition_rad_s = GIMBAL_PITCH_OUTPUT_FF_HYST_TRANSITION_RAD_S,
     .angle_pid = {
         .Kp = GM6020_PITCH_VOLTAGE_ANGLE_KP,
         .Ki = 0.0f,

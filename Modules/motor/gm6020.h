@@ -40,10 +40,6 @@ typedef struct
     float max_output_raw;
     float output_ff_sin_raw;
     float output_ff_offset_raw;
-    float output_ff_speed_raw;
-    float output_ff_speed_max_raw;
-    float output_ff_hyst_raw;
-    float output_ff_hyst_transition_rad_s;
     PID_Init_Config_s angle_pid_config;
     PID_Init_Config_s speed_pid_config;
     PID_Init_Config_s current_pid_config;
@@ -68,11 +64,6 @@ typedef struct
     float max_output_raw;
     float output_ff_sin_raw;
     float output_ff_offset_raw;
-    float output_ff_speed_raw;
-    float output_ff_speed_max_raw;
-    float output_ff_hyst_raw;
-    float output_ff_hyst_transition_rad_s;
-    float output_ff_motion_sign;
 
     PIDInstance angle_pid;   // 运行时角度环 PID 实例; 在线调参应改这一份,而不是参数模板
     PIDInstance speed_pid;   // 运行时速度环 PID 实例; 调试器里可看 Err/Pout/Iout/Dout/Output
