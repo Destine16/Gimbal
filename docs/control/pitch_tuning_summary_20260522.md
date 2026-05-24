@@ -23,20 +23,20 @@ output_ff = -1115.8459 * sin(theta) - 97.4462
 数据文件：
 
 ```text
-data/sysid/pitch_fast_multisine_oldff_kp46_sp3100_ki300_20260522_182257.csv
-data/sysid/pitch_perf_step_oldff_kp46_sp3100_ki300_20260522_182431.csv
-data/sysid/pitch_perf_sine_oldff_kp46_sp3100_ki300_20260522_182558.csv
+data/sysid/pitch_fast_multisine_current_kp46_sp3100_ki300_20260522_182257.csv
+data/sysid/pitch_perf_step_current_kp46_sp3100_ki300_20260522_182431.csv
+data/sysid/pitch_perf_sine_current_kp46_sp3100_ki300_20260522_182558.csv
 ```
 
 关键图像：
 
 ```text
-data/sysid/analysis/pitch_fast_multisine_oldff_kp46_sp3100_ki300_20260522_182257_pitch_fast_multisine_fast/pitch_fast_summary.png
-data/sysid/analysis/pitch_fast_multisine_oldff_kp46_sp3100_ki300_20260522_182257_pitch_fast_multisine_fast/pitch_fast_time_series.png
-data/sysid/analysis/pitch_perf_sine_oldff_kp46_sp3100_ki300_20260522_182558_pitch_perf_sine/sine_A5deg_T1s.png
-data/sysid/analysis/pitch_perf_sine_oldff_kp46_sp3100_ki300_20260522_182558_pitch_perf_sine/sine_A20deg_T2s.png
-data/sysid/analysis/pitch_perf_step_oldff_kp46_sp3100_ki300_20260522_182431_pitch_perf_step/step_p3deg.png
-data/sysid/analysis/pitch_perf_step_oldff_kp46_sp3100_ki300_20260522_182431_pitch_perf_step/step_m3deg.png
+data/sysid/analysis/pitch_fast_multisine_current_kp46_sp3100_ki300_20260522_182257_pitch_fast_multisine_fast/pitch_fast_summary.png
+data/sysid/analysis/pitch_fast_multisine_current_kp46_sp3100_ki300_20260522_182257_pitch_fast_multisine_fast/pitch_fast_time_series.png
+data/sysid/analysis/pitch_perf_sine_current_kp46_sp3100_ki300_20260522_182558_pitch_perf_sine/sine_A5deg_T1s.png
+data/sysid/analysis/pitch_perf_sine_current_kp46_sp3100_ki300_20260522_182558_pitch_perf_sine/sine_A20deg_T2s.png
+data/sysid/analysis/pitch_perf_step_current_kp46_sp3100_ki300_20260522_182431_pitch_perf_step/step_p3deg.png
+data/sysid/analysis/pitch_perf_step_current_kp46_sp3100_ki300_20260522_182431_pitch_perf_step/step_m3deg.png
 ```
 
 ## 验证结果
@@ -54,18 +54,9 @@ data/sysid/analysis/pitch_perf_step_oldff_kp46_sp3100_ki300_20260522_182431_pitc
 | step +3deg steady error | about +0.050 deg |
 | step -3deg steady error | about -0.048 deg |
 
-## 未保留方案
+## 清理结果
 
-| 方案 | 结果 |
-|---|---|
-| gyro damping / D | 多次出现抖动或 step 震荡，硬件风险高 |
-| 参考速度前馈 Kff=0.25 | fast max error 增至 3.21 deg |
-| 参考速度前馈 Kff=0.10 | A=5deg T=1s 正弦 max error 增至 7.99 deg，并触发输出限幅 |
-| angle Kp=48 | fast RMSE 有改善，但 +3deg step 稳态误差恶化到约 0.268 deg |
-| angle Kp=47 | fast max error 增至 7.86 deg，出现输出饱和 |
-| speed Kp=3300 | fast max error 增至 6.05 deg，出现输出饱和 |
-
-结论：当前默认参数不是动态误差最小的单项结果，但在 fast、step、sine 三类试验之间综合风险最低。
+旧参数、候选参数和未保留方案的曲线、CSV 与分析输出已经删除。当前只保留本页列出的验证数据和静态前馈图谱数据。
 
 ## 后续方向
 

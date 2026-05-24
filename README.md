@@ -93,12 +93,12 @@ C = -97.4462
 当前 pitch 参数的性能验证数据和曲线见：
 
 ```text
-data/sysid/pitch_fast_multisine_oldff_kp46_sp3100_ki300_20260522_182257.csv
-data/sysid/pitch_perf_step_oldff_kp46_sp3100_ki300_20260522_182431.csv
-data/sysid/pitch_perf_sine_oldff_kp46_sp3100_ki300_20260522_182558.csv
-data/sysid/analysis/pitch_fast_multisine_oldff_kp46_sp3100_ki300_20260522_182257_pitch_fast_multisine_fast/
-data/sysid/analysis/pitch_perf_step_oldff_kp46_sp3100_ki300_20260522_182431_pitch_perf_step/
-data/sysid/analysis/pitch_perf_sine_oldff_kp46_sp3100_ki300_20260522_182558_pitch_perf_sine/
+data/sysid/pitch_fast_multisine_current_kp46_sp3100_ki300_20260522_182257.csv
+data/sysid/pitch_perf_step_current_kp46_sp3100_ki300_20260522_182431.csv
+data/sysid/pitch_perf_sine_current_kp46_sp3100_ki300_20260522_182558.csv
+data/sysid/analysis/pitch_fast_multisine_current_kp46_sp3100_ki300_20260522_182257_pitch_fast_multisine_fast/
+data/sysid/analysis/pitch_perf_step_current_kp46_sp3100_ki300_20260522_182431_pitch_perf_step/
+data/sysid/analysis/pitch_perf_sine_current_kp46_sp3100_ki300_20260522_182558_pitch_perf_sine/
 ```
 
 本轮 pitch 调参保留 `46 / 3100 / 300` 作为当前默认。试验过的 D、参考速度前馈、更高 angle Kp 和更高 speed Kp 均未保留：它们会引入抖动、输出饱和，或破坏 `+/-3 deg` 小角度静态精度。
@@ -373,7 +373,6 @@ cmake --build --preset Debug
 - [yaw / pitch 快响应系统辨识与 PID 优化](docs/control/fast_pid_sysid_workflow.md)
 - [pitch 静态前馈图谱实验](docs/control/pitch_static_ff_map_experiment.md)
 - [pitch 调参小结](docs/control/pitch_tuning_summary_20260522.md)
-- [云台性能测试报告](Documents/gimbal_performance_report.md)
 - [视觉 USB CDC 通信协议](docs/protocol/vision_usb_cdc_protocol.md)
 - [云台坐标系与方向约定](docs/control/gimbal_coordinate_and_direction.md)
 - [IMU 姿态解算说明](docs/control/imu_attitude_estimation.md)
