@@ -147,6 +147,30 @@
                 "VISION_DEBUG_RTT_ENABLE": "ON",
                 "IMU_MOUNT_CALIBRATION_ENABLE": "OFF"
             }
+        },
+        {
+            "name": "VisionAbsoluteTarget",
+            "inherits": "default",
+            "cacheVariables": {
+                "CMAKE_BUILD_TYPE": "Debug",
+                "IMU_ONLY_BRINGUP_ENABLE": "OFF",
+                "GIMBAL_SYSID_MODE": "0",
+                "VISION_CONTROL_MODE": "2",
+                "VISION_DEBUG_RTT_ENABLE": "OFF",
+                "IMU_MOUNT_CALIBRATION_ENABLE": "OFF"
+            }
+        },
+        {
+            "name": "MotorIdle",
+            "inherits": "default",
+            "cacheVariables": {
+                "CMAKE_BUILD_TYPE": "Debug",
+                "IMU_ONLY_BRINGUP_ENABLE": "OFF",
+                "GIMBAL_SYSID_MODE": "0",
+                "VISION_CONTROL_MODE": "1",
+                "VISION_DEBUG_RTT_ENABLE": "OFF",
+                "IMU_MOUNT_CALIBRATION_ENABLE": "ON"
+            }
         }
     ],
     "buildPresets": [
@@ -201,6 +225,14 @@
         {
             "name": "VisionDebugRtt",
             "configurePreset": "VisionDebugRtt"
+        },
+        {
+            "name": "VisionAbsoluteTarget",
+            "configurePreset": "VisionAbsoluteTarget"
+        },
+        {
+            "name": "MotorIdle",
+            "configurePreset": "MotorIdle"
         }
     ]
 }

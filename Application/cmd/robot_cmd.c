@@ -52,6 +52,8 @@ static float scan_yaw_target_rad;
 static float scan_pitch_target_rad;
 static float scan_yaw_dir;
 static float scan_pitch_dir;
+static float scan_yaw_speed_rad_s;
+static float scan_pitch_speed_rad_s;
 static float recovery_yaw_target_rad;
 static float recovery_pitch_target_rad;
 
@@ -86,6 +88,28 @@ static float SignF(float value)
     return (value >= 0.0f) ? 1.0f : -1.0f;
 }
 
+static void UpdateVisionTargetFromCmd(const VisionCmd_t *vision_cmd,
+                                      float current_yaw_rad,
+                                      float current_pitch_rad)
+{
+    const float cmd_yaw_rad = 0.0001f * (float)vision_cmd->delta_yaw_1e4rad;
+    const float cmd_pitch_rad = 0.0001f * (float)vision_cmd->delta_pitch_1e4rad;
+
+#if VISION_CONTROL_MODE == VISION_CONTROL_ABSOLUTE_TARGET
+    (void)current_yaw_rad;
+    (void)current_pitch_rad;
+    vision_target_yaw_rad = cmd_yaw_rad;
+    vision_target_pitch_rad = ClampF(cmd_pitch_rad,
+                                     GIMBAL_PITCH_MIN_RAD,
+                                     GIMBAL_PITCH_MAX_RAD);
+#else
+    vision_target_yaw_rad = current_yaw_rad + cmd_yaw_rad;
+    vision_target_pitch_rad = ClampF(current_pitch_rad + cmd_pitch_rad,
+                                     GIMBAL_PITCH_MIN_RAD,
+                                     GIMBAL_PITCH_MAX_RAD);
+#endif
+}
+
 static void SentryResetStallTimers(void)
 {
     yaw_stall_start_tick_ms = 0u;
@@ -94,34 +118,99 @@ static void SentryResetStallTimers(void)
 
 static void SentryEnterScan(float current_yaw, float current_pitch)
 {
+    float pitch_min;
+    float pitch_max;
+
     sentry_state = SENTRY_STATE_SCAN;
     scan_yaw_center_rad = current_yaw;
-    scan_pitch_center_rad = ClampF(current_pitch,
+    scan_pitch_center_rad = ClampF(SENTRY_SCAN_PITCH_CENTER_RAD,
                                    GIMBAL_PITCH_MIN_RAD + SENTRY_SCAN_PITCH_RANGE_RAD,
                                    GIMBAL_PITCH_MAX_RAD - SENTRY_SCAN_PITCH_RANGE_RAD);
+    pitch_min = ClampF(scan_pitch_center_rad - SENTRY_SCAN_PITCH_RANGE_RAD,
+                       GIMBAL_PITCH_MIN_RAD,
+                       GIMBAL_PITCH_MAX_RAD);
+    pitch_max = ClampF(scan_pitch_center_rad + SENTRY_SCAN_PITCH_RANGE_RAD,
+                       GIMBAL_PITCH_MIN_RAD,
+                       GIMBAL_PITCH_MAX_RAD);
     scan_yaw_target_rad = current_yaw;
-    scan_pitch_target_rad = ClampF(current_pitch,
-                                   GIMBAL_PITCH_MIN_RAD,
-                                   GIMBAL_PITCH_MAX_RAD);
+    scan_pitch_target_rad = ClampF(current_pitch, pitch_min, pitch_max);
     scan_yaw_dir = 1.0f;
     scan_pitch_dir = 1.0f;
+    scan_yaw_speed_rad_s = 0.0f;
+    scan_pitch_speed_rad_s = 0.0f;
     vision_target_valid = 0u;
 }
 
 #if SENTRY_SCAN_ENABLE
-static float LimitStep(float current, float min_value, float max_value, float *dir)
+static float SentryUpdateScanAxis(float current,
+                                  float min_value,
+                                  float max_value,
+                                  float max_speed,
+                                  float max_accel,
+                                  float dt_s,
+                                  float *dir,
+                                  float *speed)
 {
-    if (current > max_value)
+    float distance_to_bound;
+    float desired_abs_speed;
+    float desired_speed;
+    float speed_step_max;
+    float speed_step;
+    float next;
+
+    if ((dir == NULL) || (speed == NULL) || (dt_s <= 0.0f) ||
+        (max_speed <= 0.0f) || (max_accel <= 0.0f))
+    {
+        return ClampF(current, min_value, max_value);
+    }
+
+    if (current >= max_value)
     {
         current = max_value;
         *dir = -1.0f;
+        if (*speed > 0.0f)
+        {
+            *speed = 0.0f;
+        }
     }
-    else if (current < min_value)
+    else if (current <= min_value)
     {
         current = min_value;
         *dir = 1.0f;
+        if (*speed < 0.0f)
+        {
+            *speed = 0.0f;
+        }
     }
-    return current;
+
+    distance_to_bound = (*dir > 0.0f) ? (max_value - current) : (current - min_value);
+    if (distance_to_bound <= 0.0f)
+    {
+        *dir = -*dir;
+        *speed = 0.0f;
+        return current;
+    }
+
+    desired_abs_speed = fminf(max_speed, sqrtf(2.0f * max_accel * distance_to_bound));
+    desired_speed = (*dir > 0.0f) ? desired_abs_speed : -desired_abs_speed;
+    speed_step_max = max_accel * dt_s;
+    speed_step = ClampF(desired_speed - *speed, -speed_step_max, speed_step_max);
+    *speed = ClampF(*speed + speed_step, -max_speed, max_speed);
+
+    next = current + (*speed * dt_s);
+    if (next >= max_value)
+    {
+        next = max_value;
+        *dir = -1.0f;
+        *speed = 0.0f;
+    }
+    else if (next <= min_value)
+    {
+        next = min_value;
+        *dir = 1.0f;
+        *speed = 0.0f;
+    }
+    return next;
 }
 
 static void SentryUpdateScan(float dt_s)
@@ -135,10 +224,22 @@ static void SentryUpdateScan(float dt_s)
                                    GIMBAL_PITCH_MIN_RAD,
                                    GIMBAL_PITCH_MAX_RAD);
 
-    scan_yaw_target_rad += scan_yaw_dir * SENTRY_SCAN_YAW_SPEED_RAD_S * dt_s;
-    scan_pitch_target_rad += scan_pitch_dir * SENTRY_SCAN_PITCH_SPEED_RAD_S * dt_s;
-    scan_yaw_target_rad = LimitStep(scan_yaw_target_rad, yaw_min, yaw_max, &scan_yaw_dir);
-    scan_pitch_target_rad = LimitStep(scan_pitch_target_rad, pitch_min, pitch_max, &scan_pitch_dir);
+    scan_yaw_target_rad = SentryUpdateScanAxis(scan_yaw_target_rad,
+                                               yaw_min,
+                                               yaw_max,
+                                               SENTRY_SCAN_YAW_SPEED_RAD_S,
+                                               SENTRY_SCAN_YAW_ACCEL_RAD_S2,
+                                               dt_s,
+                                               &scan_yaw_dir,
+                                               &scan_yaw_speed_rad_s);
+    scan_pitch_target_rad = SentryUpdateScanAxis(scan_pitch_target_rad,
+                                                 pitch_min,
+                                                 pitch_max,
+                                                 SENTRY_SCAN_PITCH_SPEED_RAD_S,
+                                                 SENTRY_SCAN_PITCH_ACCEL_RAD_S2,
+                                                 dt_s,
+                                                 &scan_pitch_dir,
+                                                 &scan_pitch_speed_rad_s);
 }
 #endif
 
@@ -273,6 +374,8 @@ void RobotCMDInit(void)
     scan_pitch_target_rad = 0.0f;
     scan_yaw_dir = 1.0f;
     scan_pitch_dir = 1.0f;
+    scan_yaw_speed_rad_s = 0.0f;
+    scan_pitch_speed_rad_s = 0.0f;
     recovery_yaw_target_rad = 0.0f;
     recovery_pitch_target_rad = 0.0f;
     memset((void *)&robot_cmd_debug, 0, sizeof(robot_cmd_debug));
@@ -292,14 +395,22 @@ void RobotCMDTask(void)
 
     if (last_robot_cmd_tick_ms == 0u)
     {
-        dt_s = 0.005f;
+        dt_s = 0.0f;
     }
     else
     {
-        dt_s = 0.001f * (float)(now_tick - last_robot_cmd_tick_ms);
-        if ((dt_s <= 0.0f) || (dt_s > 0.05f))
+        uint32_t elapsed_ms = now_tick - last_robot_cmd_tick_ms;
+        if (elapsed_ms == 0u)
+        {
+            dt_s = 0.0f;
+        }
+        else if (elapsed_ms > 50u)
         {
             dt_s = 0.005f;
+        }
+        else
+        {
+            dt_s = 0.001f * (float)elapsed_ms;
         }
     }
     last_robot_cmd_tick_ms = now_tick;
@@ -395,12 +506,7 @@ void RobotCMDTask(void)
         {
             if (vision_cmd.target_valid)
             {
-                vision_target_yaw_rad = current_yaw_rad +
-                                        0.0001f * (float)vision_cmd.delta_yaw_1e4rad;
-                vision_target_pitch_rad = ClampF(current_pitch_rad +
-                                                 0.0001f * (float)vision_cmd.delta_pitch_1e4rad,
-                                                 GIMBAL_PITCH_MIN_RAD,
-                                                 GIMBAL_PITCH_MAX_RAD);
+                UpdateVisionTargetFromCmd(&vision_cmd, current_yaw_rad, current_pitch_rad);
                 vision_target_valid = 1u;
                 last_target_valid_tick_ms = now_tick;
                 sentry_state = SENTRY_STATE_TRACK;

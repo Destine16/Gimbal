@@ -158,12 +158,12 @@ void MX_FREERTOS_Init(void) {
 void StartRobotTask(void *argument)
 {
   /* USER CODE BEGIN StartRobotTask */
-  // robotTask 周期: 5ms
-  // 职责: 运行应用层状态机,在 robot_cmd 和 gimbal 之间流转控制/反馈消息
+  // robotTask 周期: 1ms
+  // 职责: 更新应用层状态机、扫描目标和 IMU 反馈到电机控制链路
   for(;;)
   {
     RobotTask();
-    osDelay(5);
+    osDelay(1);
   }
   /* USER CODE END StartRobotTask */
 }

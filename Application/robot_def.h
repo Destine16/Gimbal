@@ -45,7 +45,11 @@
 #define GIMBAL_YAW_OUTPUT_SIGN     (GIMBAL_YAW_AXIS_TO_MOTOR_SIGN * GM6020_YAW_OFFICIAL_OUTPUT_TO_CAN_SIGN)
 #define GIMBAL_PITCH_OUTPUT_SIGN   (GIMBAL_PITCH_AXIS_TO_MOTOR_SIGN * GM6020_PITCH_OFFICIAL_OUTPUT_TO_CAN_SIGN)
 
-// pitch 轴软件限位: 水平为 0 rad, 活动范围 +/-42 deg
+// pitch 轴水平位标定: 相机物理水平时,映射后的 IMU pitch 轴角度。
+// 默认 0 表示使用 INS 重力水平作为相机水平; 若相机和 IMU 存在固定安装偏差,只改这里。
+#define GIMBAL_PITCH_LEVEL_OFFSET_RAD 0.0f
+
+// pitch 轴软件限位: 水平位为 0 rad, 活动范围 +/-42 deg
 #define GIMBAL_PITCH_MIN_RAD      (-0.73303829f)
 #define GIMBAL_PITCH_MAX_RAD      (0.73303829f)
 
@@ -64,11 +68,14 @@
 #define VISION_DEBUG_RTT_TX_PERIOD_MS 20u
 
 // 哨兵模式参数。有目标时使用视觉 delta 跟踪; 无目标时保持当前位置。
-#define SENTRY_SCAN_ENABLE               0u
+#define SENTRY_SCAN_ENABLE               1u
 #define SENTRY_SCAN_YAW_RANGE_RAD        0.78539816f  // +/-45 deg
+#define SENTRY_SCAN_PITCH_CENTER_RAD     0.0f         // physical level pitch
 #define SENTRY_SCAN_PITCH_RANGE_RAD      0.61086524f  // +/-35 deg
 #define SENTRY_SCAN_YAW_SPEED_RAD_S      1.74532925f  // 100 deg/s
 #define SENTRY_SCAN_PITCH_SPEED_RAD_S    1.04719755f  // 60 deg/s
+#define SENTRY_SCAN_YAW_ACCEL_RAD_S2     8.72664626f  // 500 deg/s^2
+#define SENTRY_SCAN_PITCH_ACCEL_RAD_S2   4.36332313f  // 250 deg/s^2
 #define SENTRY_TARGET_LOST_HOLD_MS       500u
 #define SENTRY_TARGET_LOST_TO_SCAN_MS    0u
 #define SENTRY_READY_LOSS_RESET_MS       200u
@@ -82,16 +89,20 @@
 #define SENTRY_STALL_YAW_BACKOFF_RAD        0.17453293f  // 10 deg
 #define SENTRY_STALL_PITCH_BACKOFF_RAD      0.08726646f  // 5 deg
 
-// 视觉 delta 命令使用策略:
+// 视觉命令使用策略:
 // CONTINUOUS: 视觉在线期间每周期使用 latest delta,适合视觉高频连续发送
 // EVENT_TARGET: 每个新帧只消费一次 delta,转换成绝对目标后持续保持,适合视觉低频发送
-#define VISION_CONTROL_CONTINUOUS    0u
-#define VISION_CONTROL_EVENT_TARGET  1u
+// ABSOLUTE_TARGET: 每个新帧直接给 yaw/pitch 绝对目标角,单位和方向同状态回传
+#define VISION_CONTROL_CONTINUOUS       0u
+#define VISION_CONTROL_EVENT_TARGET     1u
+#define VISION_CONTROL_ABSOLUTE_TARGET  2u
 #ifndef VISION_CONTROL_MODE
 #define VISION_CONTROL_MODE VISION_CONTROL_EVENT_TARGET
 #endif
-#if (VISION_CONTROL_MODE != VISION_CONTROL_CONTINUOUS) && (VISION_CONTROL_MODE != VISION_CONTROL_EVENT_TARGET)
-#error "VISION_CONTROL_MODE must be VISION_CONTROL_CONTINUOUS(0) or VISION_CONTROL_EVENT_TARGET(1)"
+#if (VISION_CONTROL_MODE != VISION_CONTROL_CONTINUOUS) && \
+    (VISION_CONTROL_MODE != VISION_CONTROL_EVENT_TARGET) && \
+    (VISION_CONTROL_MODE != VISION_CONTROL_ABSOLUTE_TARGET)
+#error "VISION_CONTROL_MODE must be 0, 1, or 2"
 #endif
 
 // 云台系统辨识模式。默认关闭; 需要实验固件时通过 CMake 打开。
