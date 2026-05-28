@@ -287,7 +287,8 @@ void VisionComm_RxBytes(const uint8_t *data, uint16_t len)
 
 uint8_t VisionComm_GetVisionCmd(VisionCmd_t *cmd)
 {
-#if VISION_CONTROL_MODE == VISION_CONTROL_EVENT_TARGET
+#if (VISION_CONTROL_MODE == VISION_CONTROL_EVENT_TARGET) || \
+    (VISION_CONTROL_MODE == VISION_CONTROL_ABSOLUTE_TARGET)
     if (!latest_cmd_pending)
     {
         return 0u;

@@ -28,12 +28,10 @@ static GM6020_Instance *yaw_motor;             // yaw 轴电机实例
 static GM6020_Instance *pitch_motor;           // pitch 轴电机实例
 static float yaw_angle_feedback_rad;           // 映射到 yaw 电机角度环的反馈角,单位 rad
 static float yaw_speed_feedback;               // 映射到 yaw 电机速度环的反馈速度,单位 rad/s
-static float pitch_angle_feedback_rad;         // 映射到 pitch 电机角度环的反馈角,单位 rad
+static float pitch_angle_feedback_rad;         // pitch 角度反馈,水平位为 0 rad
 static float pitch_speed_feedback;             // 映射到 pitch 电机速度环的反馈速度,单位 rad/s
 static float yaw_zero_offset_rad;              // yaw 业务零点: 首次 IMU 在线时锁定
 static uint8_t yaw_zero_locked;                // yaw 零点是否已锁定
-static float pitch_zero_offset_rad;            // pitch 业务零点: 首次 IMU 在线时锁定
-static uint8_t pitch_zero_locked;              // pitch 零点是否已锁定
 static float pitch_speed_feedback_lpf;
 static uint8_t pitch_speed_feedback_lpf_ready;
 
@@ -60,8 +58,6 @@ void GimbalInit(void)
     memset(&gimbal_feedback_data, 0, sizeof(gimbal_feedback_data));
     yaw_zero_offset_rad = 0.0f;
     yaw_zero_locked = 0u;
-    pitch_zero_offset_rad = 0.0f;
-    pitch_zero_locked = 0u;
     pitch_speed_feedback_lpf = 0.0f;
     pitch_speed_feedback_lpf_ready = 0u;
 
@@ -119,7 +115,7 @@ void GimbalTask(void)
     uint8_t imu_online = 0u;
     float yaw_total_angle_zeroed_rad = 0.0f;
     float pitch_angle_raw_rad = 0.0f;
-    float pitch_angle_zeroed_rad = 0.0f;
+    float pitch_angle_level_rad = 0.0f;
 
     SubGetMessage(gimbal_sub, &gimbal_cmd_recv);
     gimbal_ins = INS_GetData();
@@ -140,12 +136,7 @@ void GimbalTask(void)
             yaw_total_angle_zeroed_rad = gimbal_ins->YawTotalAngle - yaw_zero_offset_rad;
 
             pitch_angle_raw_rad = GimbalPitchParam.angle_feedback_sign * gimbal_ins->Roll;
-            if (!pitch_zero_locked)
-            {
-                pitch_zero_offset_rad = pitch_angle_raw_rad;
-                pitch_zero_locked = 1u;
-            }
-            pitch_angle_zeroed_rad = pitch_angle_raw_rad - pitch_zero_offset_rad;
+            pitch_angle_level_rad = pitch_angle_raw_rad - GIMBAL_PITCH_LEVEL_OFFSET_RAD;
             pitch_speed_feedback = GimbalPitchParam.speed_feedback_sign * gimbal_ins->Gyro[0];
             if (!pitch_speed_feedback_lpf_ready)
             {
@@ -166,7 +157,7 @@ void GimbalTask(void)
         }
         yaw_angle_feedback_rad = GimbalYawParam.angle_feedback_sign * yaw_total_angle_zeroed_rad;
         yaw_speed_feedback = GimbalYawParam.speed_feedback_sign * gimbal_ins->Gyro[2];
-        pitch_angle_feedback_rad = pitch_angle_zeroed_rad;
+        pitch_angle_feedback_rad = pitch_angle_level_rad;
     }
 
     switch (gimbal_cmd_recv.gimbal_mode)

@@ -33,8 +33,8 @@ option(GIMBAL_YAW_ONLY_TEST_ENABLE "Enable temporary yaw-only gimbal test mode" 
 option(GIMBAL_PITCH_ONLY_TEST_ENABLE "Enable temporary pitch-only gimbal test mode" OFF)
 option(VISION_DEBUG_RTT_ENABLE "Enable normal vision-control RTT debug telemetry" OFF)
 option(IMU_MOUNT_CALIBRATION_ENABLE "Keep gimbal motors zero-force while collecting IMU mount calibration RTT data" OFF)
-set(VISION_CONTROL_MODE "1" CACHE STRING "Vision control mode: 0=continuous delta, 1=event delta to held target")
-set_property(CACHE VISION_CONTROL_MODE PROPERTY STRINGS 0 1)
+set(VISION_CONTROL_MODE "1" CACHE STRING "Vision control mode: 0=continuous delta, 1=event delta to held target, 2=absolute target")
+set_property(CACHE VISION_CONTROL_MODE PROPERTY STRINGS 0 1 2)
 set(GIMBAL_SYSID_MODE "0" CACHE STRING "Gimbal system identification mode: 0=off, 1=yaw PRBS, 3=yaw step, 5=yaw perf step, 6=pitch perf step, 7=yaw perf sine, 8=pitch perf sine, 9=pitch PRBS, 10=yaw fast multisine, 11=pitch fast multisine, 13=pitch static feedforward map")
 set_property(CACHE GIMBAL_SYSID_MODE PROPERTY STRINGS 0 1 3 5 6 7 8 9 10 11 13)
 
